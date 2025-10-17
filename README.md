@@ -251,18 +251,50 @@ forever start server.js
 ```
 
 ### Public Testing with ngrok
-```bash
-# Install ngrok
-npm install -g ngrok
 
-# Start server
-npm start
+#### Step-by-Step Setup for ngrok Account Holders
 
-# In another terminal, expose to internet
-ngrok http 3000
+1. **Install ngrok** (if not already done):
+   ```bash
+   npm install -g ngrok
+   ```
 
-# Share the https://xyz.ngrok.io URL
-```
+2. **Authenticate** (one-time setup - you've already done this!):
+   ```bash
+   ngrok config add-authtoken YOUR_NGROK_AUTH_TOKEN
+   ```
+
+3. **Start your game server**:
+   ```bash
+   npm start
+   ```
+
+4. **In a new terminal, start ngrok**:
+   ```bash
+   # Basic tunnel (recommended for testing)
+   ngrok http 3000
+   
+   # Or with custom subdomain (if available on your plan)
+   ngrok http 3000 --subdomain=spy-word-game
+   
+   # Or with custom domain (if you have one configured)
+   ngrok http 3000 --domain=your-domain.ngrok-free.app
+   ```
+
+5. **Share the URL**: Copy the HTTPS URL from ngrok output (e.g., `https://abc123.ngrok-free.app`) and share it with players
+
+#### Benefits with Your ngrok Account
+- ✅ **No time limits**: Sessions don't expire after 2 hours
+- ✅ **Better performance**: Priority routing and faster connections
+- ✅ **Access logs**: See connection details in your ngrok dashboard
+- ✅ **Custom domains**: Use consistent URLs (if configured)
+- ✅ **HTTPS included**: Automatic SSL certificates
+
+#### Alternative: ngrok Web Interface
+If the command line isn't working, you can also:
+1. Visit [ngrok dashboard](https://dashboard.ngrok.com/tunnels/agents)
+2. Download the ngrok agent for Windows
+3. Run it with a GUI interface
 
 ## 🎯 Game Rules & Strategy
 
