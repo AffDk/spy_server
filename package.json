@@ -1,0 +1,31 @@
+{
+  "name": "spy-word-game",
+  "version": "1.0.0",
+  "description": "A multiplayer Spy Word game web application with real-time WebSocket communication",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "jest",
+    "test:integration": "node test-simulator.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": ["game", "multiplayer", "websocket", "spy", "words"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "csv-parser": "^3.0.0",
+    "qrcode": "^1.5.3"
+  },
+  "devDependencies": {
+    "jest": "^29.6.2",
+    "puppeteer": "^20.8.0",
+    "socket.io-client": "^4.7.2",
+    "nodemon": "^3.0.1"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/__tests__/**/*.js", "**/?(*.)+(spec|test).js"]
+  }
+}
