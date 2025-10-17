@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spy Word Game - Player</title>
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="icon" href="/icon.png" type="image/png">
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>🕵️ Spy Word Game</h1>
+            
+            <!-- Join Phase -->
+            <div id="join-phase">
+                <h2>Join Game</h2>
+                
+                <form id="joinForm">
+                    <div class="form-group">
+                        <label for="nickname">Enter Your Nickname:</label>
+                        <input type="text" id="nickname" placeholder="Your nickname" maxlength="20" required>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-full">
+                        Join Game
+                    </button>
+                </form>
+
+                <div class="error-message" id="join-error-message"></div>
+            </div>
+
+            <!-- Lobby Phase -->
+            <div id="lobby-phase" class="hidden">
+                <h2>Welcome, <span id="player-nickname"></span>!</h2>
+                
+                <div class="game-status status-lobby">
+                    Waiting for game to start...
+                </div>
+
+                <div class="info-message">
+                    <strong>Session:</strong> <span id="session-display"></span><br>
+                    <strong>Players Connected:</strong> <span id="lobby-player-count">0</span>
+                </div>
+
+                <div class="player-list" id="lobby-player-list">
+                    <div class="loading">Loading players...</div>
+                </div>
+
+                <div class="lobby-timer">
+                    <span id="lobby-status">Lobby open</span>
+                </div>
+
+                <button id="leave-game-btn" class="btn btn-secondary btn-full">
+                    Leave Game
+                </button>
+            </div>
+
+            <!-- Game Phase -->
+            <div id="game-phase" class="hidden">
+                <h2>Game Started!</h2>
+                
+                <div id="role-assignment" class="hidden">
+                    <div class="role-display" id="role-display">
+                        <!-- Role will be displayed here -->
+                    </div>
+                    
+                    <div class="word-display" id="word-display" style="display: none;">
+                        <!-- Word will be displayed here for civilians -->
+                    </div>
+                </div>
+
+                <div id="waiting-for-timer" class="info-message">
+                    <strong>Roles assigned!</strong><br>
+                    Waiting for host to start the timer...
+                </div>
+
+                <div id="game-timer-display" class="hidden">
+                    <div class="timer" id="player-game-timer">15:00</div>
+                    
+                    <div class="game-status status-game">
+                        Game in Progress
+                    </div>
+                </div>
+            </div>
+
+            <!-- Game End Phase -->
+            <div id="end-phase" class="hidden">
+                <h2>🎉 Game Over!</h2>
+                
+                <div class="game-status status-ended">
+                    Time's up!
+                </div>
+
+                <div class="spy-reveal" id="player-spy-reveal">
+                    <h3>The Spies Were:</h3>
+                    <div class="spy-list" id="player-spy-names"></div>
+                </div>
+
+                <div class="info-message">
+                    Waiting for host to start a new round or close the game...
+                </div>
+            </div>
+
+            <!-- Disconnected Phase -->
+            <div id="disconnected-phase" class="hidden">
+                <h2>😞 Disconnected</h2>
+                
+                <div class="error-message" style="display: block;">
+                    You have been disconnected from the game.
+                </div>
+
+                <a href="/" class="btn btn-primary btn-full">
+                    Return to Home
+                </a>
+            </div>
+
+            <div class="error-message" id="error-message"></div>
+            <div class="success-message" id="success-message"></div>
+        </div>
+    </div>
+
+    <!-- Alarm overlay for game end -->
+    <div id="alarm-overlay" class="alarm-flash hidden"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/script.js"></script>
+    <script>
+        let socket;
+        let sessionId;
+        let playerNickname;
+        let gameTimer;
+        let gameStartTime;
+        let gameDuration;
+        let audioContext;
+        let alarmTimeout;
+
+        function initializeSocket() {
+            socket = io();
+            
+            socket.on('connect', () => {
+                console.log('Connected to server');
+                // Get session ID from URL
+                sessionId = window.location.pathname.split('/')[2];
+                document.getElementById('session-display').textContent = sessionId;
+            });
+
+            socket.on('joinedSession', (data) => {
+                playerNickname = data.nickname;
+                document.getElementById('player-nickname').textContent = playerNickname;
+                showLobbyPhase();
+            });
+
+            socket.on('playersUpdated', (data) => {
+                updateLobbyPlayerList(data.players, data.count);
+            });
+
+            socket.on('lobbyEnded', (data) => {
+                document.getElementById('lobby-status').textContent = 
+                    `Lobby closed (${data.playerCount} players)`;
+            });
+
+            socket.on('lobbyExtended', () => {
+                showSuccess('Lobby extended by 30 seconds');
+                document.getElementById('lobby-status').textContent = 'Lobby open';
+            });
+
+            socket.on('roleAssigned', (data) => {
+                console.log('Role assigned:', data);
+                showGamePhase();
+                assignRole(data);
+            });
+
+            socket.on('gameStarted', () => {
+                // Roles assigned, waiting for timer
+                document.getElementById('waiting-for-timer').style.display = 'block';
+            });
+
+            socket.on('timerStarted', (data) => {
+                gameStartTime = data.startTime;
+                gameDuration = data.duration;
+                showGameTimer();
+                startPlayerGameTimer();
+            });
+
+            socket.on('gameEnded', (data) => {
+                clearInterval(gameTimer);
+                showEndPhase(data.spies);
+                triggerAlarm();
+            });
+
+            socket.on('newRoundStarted', () => {
+                console.log('New round started - resetting client state');
+                hideEndPhase();
+                // Don't hide role assignment - it will be shown when new roles arrive
+                document.getElementById('waiting-for-timer').style.display = 'block';
+                document.getElementById('game-timer-display').classList.add('hidden');
+                
+                // Reset any previous game state
+                clearInterval(gameTimer);
+                gameStartTime = null;
+                gameDuration = null;
+            });
+
+            socket.on('gameAborted', () => {
+                showDisconnected();
+                showError('Game was aborted by the host');
+            });
+
+            socket.on('gameClosed', () => {
+                showDisconnected();
+                showSuccess('Game ended. Thank you for playing!');
+            });
+
+            socket.on('error', (message) => {
+                showJoinError(message);
+            });
+
+            socket.on('disconnect', () => {
+                console.log('Disconnected from server');
+                showDisconnected();
+            });
+        }
+
+        function showLobbyPhase() {
+            document.getElementById('join-phase').classList.add('hidden');
+            document.getElementById('lobby-phase').classList.remove('hidden');
+        }
+
+        function showGamePhase() {
+            document.getElementById('lobby-phase').classList.add('hidden');
+            document.getElementById('game-phase').classList.remove('hidden');
+        }
+
+        function showGameTimer() {
+            document.getElementById('waiting-for-timer').style.display = 'none';
+            document.getElementById('game-timer-display').classList.remove('hidden');
+        }
+
+        function showEndPhase(spies) {
+            document.getElementById('game-timer-display').classList.add('hidden');
+            document.getElementById('end-phase').classList.remove('hidden');
+            
+            document.getElementById('player-spy-names').textContent = 
+                spies.join(', ') || 'No spies found';
+        }
+
+        function hideEndPhase() {
+            document.getElementById('end-phase').classList.add('hidden');
+            document.getElementById('game-phase').classList.remove('hidden');
+        }
+
+        function showDisconnected() {
+            document.getElementById('join-phase').classList.add('hidden');
+            document.getElementById('lobby-phase').classList.add('hidden');
+            document.getElementById('game-phase').classList.add('hidden');
+            document.getElementById('end-phase').classList.add('hidden');
+            document.getElementById('disconnected-phase').classList.remove('hidden');
+        }
+
+        function assignRole(data) {
+            console.log('Assigning role to player:', data);
+            document.getElementById('role-assignment').classList.remove('hidden');
+            
+            const roleDisplay = document.getElementById('role-display');
+            const wordDisplay = document.getElementById('word-display');
+            
+            if (data.role === 'spy') {
+                console.log('Player is assigned as SPY');
+                roleDisplay.innerHTML = '🕵️ You are a SPY!';
+                roleDisplay.className = 'role-display role-spy';
+                wordDisplay.style.display = 'none';
+            } else {
+                console.log('Player is assigned as CIVILIAN with word:', data.word);
+                roleDisplay.innerHTML = '👤 You are a CIVILIAN';
+                roleDisplay.className = 'role-display role-civilian';
+                
+                wordDisplay.innerHTML = `<strong>Your word is:</strong><br><span style="font-size: 1.5em;">${data.word}</span>`;
+                wordDisplay.style.display = 'block';
+            }
+        }
+
+        function updateLobbyPlayerList(players, count) {
+            document.getElementById('lobby-player-count').textContent = count;
+            
+            const playerListDiv = document.getElementById('lobby-player-list');
+            if (players.length === 0) {
+                playerListDiv.innerHTML = '<div class="loading">Loading players...</div>';
+            } else {
+                playerListDiv.innerHTML = players.map(player => 
+                    `<div class="player-item ${player.isHost ? 'host' : ''}">${player.nickname}</div>`
+                ).join('');
+            }
+        }
+
+        function startPlayerGameTimer() {
+            const updateTimer = () => {
+                const elapsed = Date.now() - gameStartTime;
+                const remaining = Math.max(0, gameDuration * 1000 - elapsed);
+                
+                const minutes = Math.floor(remaining / 60000);
+                const seconds = Math.floor((remaining % 60000) / 1000);
+                
+                const display = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                document.getElementById('player-game-timer').textContent = display;
+                
+                // Add visual warnings
+                const timerEl = document.getElementById('player-game-timer');
+                timerEl.className = 'timer';
+                
+                if (remaining <= 60000) { // Last minute
+                    timerEl.classList.add('critical');
+                } else if (remaining <= 300000) { // Last 5 minutes
+                    timerEl.classList.add('warning');
+                }
+                
+                if (remaining <= 0) {
+                    clearInterval(gameTimer);
+                }
+            };
+            
+            updateTimer();
+            gameTimer = setInterval(updateTimer, 1000);
+        }
+
+        async function initializeAudio() {
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Request notification permission
+                if ('Notification' in window) {
+                    await Notification.requestPermission();
+                }
+            } catch (error) {
+                console.log('Audio initialization failed:', error);
+            }
+        }
+
+        function triggerAlarm() {
+            // Visual alarm
+            const alarmOverlay = document.getElementById('alarm-overlay');
+            alarmOverlay.classList.remove('hidden');
+            
+            // Audio alarm
+            playAlarmSound();
+            
+            // Show notification
+            showNotification();
+            
+            // Stop after 5 seconds
+            alarmTimeout = setTimeout(() => {
+                alarmOverlay.classList.add('hidden');
+            }, 5000);
+        }
+
+        function playAlarmSound() {
+            if (!audioContext) return;
+            
+            try {
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+                oscillator.type = 'square';
+                
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 5);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 5);
+                
+                // Beep pattern
+                for (let i = 0; i < 10; i++) {
+                    setTimeout(() => {
+                        if (audioContext.state === 'running') {
+                            const beep = audioContext.createOscillator();
+                            const beepGain = audioContext.createGain();
+                            
+                            beep.connect(beepGain);
+                            beepGain.connect(audioContext.destination);
+                            
+                            beep.frequency.setValueAtTime(1000, audioContext.currentTime);
+                            beep.type = 'sine';
+                            
+                            beepGain.gain.setValueAtTime(0.2, audioContext.currentTime);
+                            beepGain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+                            
+                            beep.start(audioContext.currentTime);
+                            beep.stop(audioContext.currentTime + 0.2);
+                        }
+                    }, i * 500);
+                }
+            } catch (error) {
+                console.log('Audio playback failed:', error);
+            }
+        }
+
+        function showNotification() {
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification('Spy Word Game', {
+                    body: 'Time\'s up! The game has ended.',
+                    icon: '/icon.png',
+                    tag: 'spy-game-alarm'
+                });
+            }
+        }
+
+        function showJoinError(message) {
+            const errorDiv = document.getElementById('join-error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('success-message');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            setTimeout(() => {
+                successDiv.style.display = 'none';
+            }, 3000);
+        }
+
+        // Event listeners
+        document.getElementById('joinForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const nickname = document.getElementById('nickname').value.trim();
+            
+            if (!nickname) {
+                showJoinError('Please enter a nickname');
+                return;
+            }
+
+            if (nickname.length > 20) {
+                showJoinError('Nickname must be 20 characters or less');
+                return;
+            }
+
+            // Initialize audio on user interaction
+            initializeAudio();
+
+            socket.emit('joinSession', { sessionId, nickname });
+        });
+
+        document.getElementById('leave-game-btn').addEventListener('click', () => {
+            if (confirm('Are you sure you want to leave the game?')) {
+                socket.disconnect();
+                showDisconnected();
+            }
+        });
+
+        // Handle page visibility change for alarm
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && audioContext && audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        });
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeSocket();
+        });
+
+        // Handle page refresh/close
+        window.addEventListener('beforeunload', () => {
+            if (socket) {
+                socket.disconnect();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spy Word Game - Test Page</title>
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="icon" href="/icon.png" type="image/png">
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>🧪 Test Suite</h1>
+            <p>This page helps test the Spy Word Game functionality</p>
+            
+            <div class="btn-group">
+                <button id="connection-test-btn" class="btn btn-primary">
+                    Test Connection
+                </button>
+                <button id="simulate-players-btn" class="btn btn-success">
+                    Simulate 4 Players
+                </button>
+                <button id="alarm-test-btn" class="btn btn-warning">
+                    Test Alarm
+                </button>
+            </div>
+
+            <div id="test-results" class="info-message hidden">
+                <h3>Test Results:</h3>
+                <pre id="test-output"></pre>
+            </div>
+
+            <div class="error-message" id="test-error-message"></div>
+            <div class="success-message" id="test-success-message"></div>
+        </div>
+
+        <div class="card" style="margin-top: 20px;">
+            <h2>Manual Testing</h2>
+            
+            <div class="form-group">
+                <label for="test-session-id">Session ID for Testing:</label>
+                <input type="text" id="test-session-id" placeholder="Enter session ID">
+            </div>
+
+            <div class="btn-group">
+                <button id="join-test-btn" class="btn btn-secondary">
+                    Join as Test Player
+                </button>
+                <button id="multi-tab-test-btn" class="btn btn-secondary">
+                    Open Multiple Tabs
+                </button>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top: 20px;">
+            <h2>Quick Actions</h2>
+            
+            <div class="btn-group">
+                <a href="/" class="btn btn-primary">
+                    Start New Game
+                </a>
+                <button id="clear-storage-btn" class="btn btn-warning">
+                    Clear Storage
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/script.js"></script>
+    <script>
+        let socket;
+        let testResults = [];
+
+        function log(message) {
+            testResults.push(`[${new Date().toLocaleTimeString()}] ${message}`);
+            document.getElementById('test-output').textContent = testResults.join('\n');
+            document.getElementById('test-results').classList.remove('hidden');
+            console.log(message);
+        }
+
+        function showError(message) {
+            UIUtils.showMessage('test-error-message', message, 'error');
+        }
+
+        function showSuccess(message) {
+            UIUtils.showMessage('test-success-message', message, 'success');
+        }
+
+        // Test connection to server
+        function testConnection() {
+            log('Testing connection to server...');
+            
+            socket = io();
+            
+            socket.on('connect', () => {
+                log('✅ Successfully connected to server');
+                showSuccess('Connection test passed');
+                socket.disconnect();
+            });
+
+            socket.on('connect_error', (error) => {
+                log(`❌ Connection failed: ${error.message}`);
+                showError('Connection test failed');
+            });
+
+            socket.on('disconnect', () => {
+                log('🔌 Disconnected from server');
+            });
+        }
+
+        // Simulate multiple players joining
+        function simulateMultiplePlayers() {
+            log('Starting simulation of 4 players...');
+            
+            // First create a game session
+            const testSocket = io();
+            
+            testSocket.on('connect', () => {
+                log('Creating test session...');
+                testSocket.emit('createSession', { duration: 5 }); // 5 minute game
+            });
+
+            testSocket.on('sessionCreated', (data) => {
+                const sessionId = data.sessionId;
+                log(`✅ Test session created: ${sessionId}`);
+                
+                // Now simulate players joining
+                const playerNames = ['TestPlayer1', 'TestPlayer2', 'TestPlayer3', 'TestPlayer4'];
+                
+                playerNames.forEach((name, index) => {
+                    setTimeout(() => {
+                        const playerSocket = io();
+                        
+                        playerSocket.on('connect', () => {
+                            log(`Player ${name} connecting...`);
+                            playerSocket.emit('joinSession', { sessionId, nickname: name });
+                        });
+
+                        playerSocket.on('joinedSession', () => {
+                            log(`✅ ${name} joined successfully`);
+                        });
+
+                        playerSocket.on('error', (error) => {
+                            log(`❌ ${name} failed to join: ${error}`);
+                        });
+
+                        // Keep connection alive for testing
+                        setTimeout(() => {
+                            log(`🔌 Disconnecting ${name}`);
+                            playerSocket.disconnect();
+                        }, 30000);
+
+                    }, index * 1000);
+                });
+
+                showSuccess('4 test players simulation started');
+                
+                // Disconnect host after simulation
+                setTimeout(() => {
+                    testSocket.disconnect();
+                }, 35000);
+            });
+
+            testSocket.on('error', (error) => {
+                log(`❌ Failed to create test session: ${error}`);
+                showError('Simulation failed');
+            });
+        }
+
+        // Test alarm functionality
+        function testAlarm() {
+            log('Testing alarm functionality...');
+            
+            // Test audio
+            AudioUtils.initialize().then(success => {
+                if (success) {
+                    log('✅ Audio context initialized');
+                    
+                    // Play test beep
+                    AudioUtils.playBeep(800, 500);
+                    log('🔊 Playing test beep...');
+                    
+                    setTimeout(() => {
+                        AudioUtils.playAlarmSequence();
+                        log('🚨 Playing alarm sequence...');
+                    }, 1000);
+                    
+                    showSuccess('Alarm test completed');
+                } else {
+                    log('❌ Audio context failed to initialize');
+                    showError('Audio test failed');
+                }
+            });
+
+            // Test notification
+            NotificationUtils.requestPermission().then(granted => {
+                if (granted) {
+                    log('✅ Notification permission granted');
+                    
+                    setTimeout(() => {
+                        NotificationUtils.show('Test Notification', {
+                            body: 'This is a test notification for the Spy Word Game',
+                            tag: 'test-notification'
+                        });
+                        log('📱 Test notification sent');
+                    }, 2000);
+                } else {
+                    log('⚠️ Notification permission denied');
+                }
+            });
+        }
+
+        // Join a specific session as test player
+        function joinTestSession() {
+            const sessionId = document.getElementById('test-session-id').value.trim();
+            
+            if (!sessionId) {
+                showError('Please enter a session ID');
+                return;
+            }
+
+            log(`Joining session ${sessionId} as test player...`);
+            
+            const testSocket = io();
+            
+            testSocket.on('connect', () => {
+                testSocket.emit('joinSession', { 
+                    sessionId, 
+                    nickname: `TestPlayer_${Date.now()}` 
+                });
+            });
+
+            testSocket.on('joinedSession', (data) => {
+                log(`✅ Successfully joined session as ${data.nickname}`);
+                showSuccess('Successfully joined test session');
+                
+                // Keep connection for manual testing
+                setTimeout(() => {
+                    testSocket.disconnect();
+                    log('🔌 Test player disconnected');
+                }, 60000);
+            });
+
+            testSocket.on('error', (error) => {
+                log(`❌ Failed to join session: ${error}`);
+                showError('Failed to join test session');
+            });
+        }
+
+        // Open multiple tabs for testing
+        function openMultipleTabs() {
+            const sessionId = document.getElementById('test-session-id').value.trim();
+            
+            if (!sessionId) {
+                showError('Please enter a session ID');
+                return;
+            }
+
+            const joinUrl = `${window.location.origin}/join/${sessionId}`;
+            
+            // Open 4 tabs
+            for (let i = 1; i <= 4; i++) {
+                setTimeout(() => {
+                    window.open(joinUrl, `_blank_${i}`);
+                }, i * 500);
+            }
+
+            log(`Opened 4 tabs for session ${sessionId}`);
+            showSuccess('Multiple test tabs opened');
+        }
+
+        // Clear all stored data
+        function clearStorage() {
+            StorageUtils.clear();
+            log('🧹 Cleared all stored game data');
+            showSuccess('Storage cleared');
+        }
+
+        // Event listeners
+        document.getElementById('connection-test-btn').addEventListener('click', testConnection);
+        document.getElementById('simulate-players-btn').addEventListener('click', simulateMultiplePlayers);
+        document.getElementById('alarm-test-btn').addEventListener('click', testAlarm);
+        document.getElementById('join-test-btn').addEventListener('click', joinTestSession);
+        document.getElementById('multi-tab-test-btn').addEventListener('click', openMultipleTabs);
+        document.getElementById('clear-storage-btn').addEventListener('click', clearStorage);
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            log('🧪 Test page loaded and ready');
+            
+            // Show current environment info
+            log(`Environment: ${window.location.origin}`);
+            log(`User Agent: ${navigator.userAgent.substring(0, 50)}...`);
+            log(`Online: ${navigator.onLine}`);
+            log(`Mobile: ${GameUtils.isMobile()}`);
+        });
+    </script>
+</body>
+</html>

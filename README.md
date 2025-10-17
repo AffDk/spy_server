@@ -213,42 +213,218 @@ npm install
 npm run dev  # Uses nodemon for auto-restart
 ```
 
-### Production Deployment
+### Production Deployment (Always Online)
 
-#### Heroku
+#### 🚀 Railway (Recommended - Free & Easy)
+Railway offers excellent Node.js support with free tier perfect for this game.
+
 ```bash
+# Install Railway CLI
+npm install -g @railway/cli
+
+# Login to Railway
+railway login
+
+# Deploy from your current directory
+railway deploy
+
+# Get your live URL
+railway domain
+```
+
+**Why Railway?**
+- ✅ Free tier with 500 hours/month (enough for always-on)
+- ✅ Automatic deployments from GitHub
+- ✅ Built-in environment variables
+- ✅ WebSocket support
+- ✅ Custom domains
+
+#### 🌐 Render (Great Alternative - Free Tier)
+```bash
+# 1. Push your code to GitHub (you've already done this!)
+# 2. Go to https://render.com
+# 3. Connect your GitHub repository
+# 4. Choose "Web Service"
+# 5. Configure:
+#    - Build Command: npm install
+#    - Start Command: npm start
+#    - Port: 3000
+```
+
+**Why Render?**
+- ✅ Free tier (with some limitations)
+- ✅ Automatic deployments from GitHub
+- ✅ Free SSL certificates
+- ✅ Easy setup via web interface
+
+#### ☁️ Heroku (Classic Choice)
+```bash
+# Install Heroku CLI from https://devcenter.heroku.com/articles/heroku-cli
+
+# Login to Heroku
+heroku login
+
 # Create Heroku app
-heroku create spy-word-game
+heroku create your-spy-word-game
 
 # Deploy
-git push heroku main
+git push heroku master
 
-# Open app
+# Open your live app
 heroku open
 ```
 
-#### Vercel
+**Note:** Heroku removed their free tier, so this requires a paid plan (~$5-7/month).
+
+#### ⚡ Vercel (Serverless)
 ```bash
 # Install Vercel CLI
 npm i -g vercel
 
-# Deploy
+# Deploy (follow prompts)
 vercel --prod
+
+# Your app will be live at https://your-project.vercel.app
 ```
 
-#### Manual Server
+**Note:** Vercel is serverless, which works great for the frontend but may have limitations with persistent WebSocket connections.
+
+#### 🔥 Firebase Hosting + Cloud Functions
 ```bash
-# Install dependencies
-npm install --production
+# Install Firebase CLI
+npm install -g firebase-tools
 
-# Start with PM2 (recommended)
-npm install -g pm2
-pm2 start server.js --name spy-game
+# Login to Firebase
+firebase login
 
-# Or use forever
-npm install -g forever
-forever start server.js
+# Initialize Firebase project
+firebase init
+
+# Deploy
+firebase deploy
 ```
+
+#### 🐳 DigitalOcean App Platform
+1. Go to [DigitalOcean App Platform](https://cloud.digitalocean.com/apps)
+2. Connect your GitHub repository
+3. Configure build settings:
+   - Build Command: `npm install`
+   - Run Command: `npm start`
+4. Deploy with one click
+
+#### 📋 Quick Comparison
+
+| Platform | Free Tier | Always On | WebSockets | Setup Difficulty |
+|----------|-----------|-----------|------------|------------------|
+| **Railway** | ✅ 500hrs/month | ✅ Yes | ✅ Yes | ⭐⭐ Easy |
+| **Render** | ✅ Limited | ⚠️ Sleeps | ✅ Yes | ⭐ Very Easy |
+| **Heroku** | ❌ Paid only | ✅ Yes | ✅ Yes | ⭐⭐ Easy |
+| **Vercel** | ✅ Generous | ✅ Yes | ⚠️ Limited | ⭐ Very Easy |
+| **DigitalOcean** | ❌ $5+/month | ✅ Yes | ✅ Yes | ⭐⭐⭐ Medium |
+
+### 🎯 Recommended: Deploy to Railway (Step-by-Step)
+
+Railway is perfect for your Spy Word Game because it supports WebSockets and stays online 24/7 on the free tier.
+
+#### Step 1: Prepare Your Repository
+Your code is already on GitHub, so you're ready! If not:
+```bash
+git init
+git add .
+git commit -m "Initial commit"
+git branch -M main
+git remote add origin https://github.com/yourusername/spy_server.git
+git push -u origin main
+```
+
+#### Step 2: Deploy to Railway
+1. **Go to [Railway.app](https://railway.app)**
+2. **Sign up** with your GitHub account
+3. **Click "New Project"**
+4. **Select "Deploy from GitHub repo"**
+5. **Choose your `spy_server` repository**
+6. **Railway will automatically:**
+   - Detect it's a Node.js app
+   - Run `npm install`
+   - Start with `npm start`
+   - Generate a public URL
+
+#### Step 3: Configure Environment (Optional)
+```bash
+# If you want to set custom environment variables
+# In Railway dashboard > Variables tab, add:
+PORT=3000
+NODE_ENV=production
+```
+
+#### Step 4: Get Your Live URL
+After deployment (takes 2-3 minutes):
+- Your game will be live at `https://yourproject-production.up.railway.app`
+- Share this URL with anyone worldwide!
+- No ngrok needed - it's always online
+
+#### Step 5: Enable Custom Domain (Optional)
+In Railway dashboard:
+1. Go to Settings > Domains
+2. Add your custom domain
+3. Update DNS records as instructed
+
+### 🔄 Automatic Updates
+Once deployed, every time you push to GitHub:
+```bash
+git add .
+git commit -m "Updated game features"
+git push origin main
+```
+Railway will automatically redeploy your updated game!
+
+### 🛠 Production Deployment Tips
+
+#### Environment Configuration
+Most cloud platforms automatically handle:
+- ✅ `PORT` environment variable (your app uses `process.env.PORT`)
+- ✅ Node.js version (specified in `package.json`)
+- ✅ Dependencies installation (`npm install`)
+- ✅ SSL certificates (HTTPS)
+
+#### Performance Considerations
+- **Memory**: Your app uses in-memory storage, perfect for cloud deployment
+- **WebSockets**: All recommended platforms support Socket.io
+- **File Storage**: Word list (`word_list.csv`) is included in deployment
+- **Sessions**: Game sessions reset on server restart (by design)
+
+#### Monitoring Your Live Game
+After deployment, you can:
+- View logs in your platform's dashboard
+- Monitor active connections and memory usage
+- Set up alerts for downtime
+- Check performance metrics
+
+### 🌍 Going Live Checklist
+
+Before sharing your game publicly:
+
+1. **✅ Test Deployment**
+   ```bash
+   # Visit your live URL
+   # Create a test game
+   # Join from multiple devices/browsers
+   ```
+
+2. **✅ Performance Test**
+   - Test with 10+ players
+   - Run a full game cycle
+   - Check mobile browser compatibility
+
+3. **✅ Share Your Game**
+   - Your live URL works globally
+   - No firewall or network restrictions
+   - Players can join from any device with internet
+
+4. **✅ Optional Customization**
+   - Add your own words to the CSV
+   - Customize game duration limits
+   - Modify the UI styling
 
 ### Public Testing with ngrok
 

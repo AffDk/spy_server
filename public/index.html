@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spy Word Game - Host Setup</title>
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="icon" href="/icon.png" type="image/png">
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>🕵️ Spy Word Game</h1>
+            
+            <div id="setup-form">
+                <h2>Host Setup</h2>
+                
+                <form id="gameSetupForm">
+                    <div class="form-group">
+                        <label for="duration">Game Duration (minutes):</label>
+                        <input type="number" id="duration" min="5" max="60" value="15" required>
+                        <small>Minimum: 5 minutes, Maximum: 60 minutes</small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-full">
+                        Start Game Session
+                    </button>
+                </form>
+
+                <div class="error-message" id="error-message"></div>
+                <div class="success-message" id="success-message"></div>
+            </div>
+
+            <div id="word-management">
+                <h3>Add Custom Words</h3>
+                <form id="wordForm">
+                    <div class="form-group">
+                        <label for="newWord">New Word:</label>
+                        <input type="text" id="newWord" placeholder="Enter a word to add to the game">
+                    </div>
+                    
+                    <button type="submit" class="btn btn-secondary btn-full">
+                        Add Word
+                    </button>
+                </form>
+
+                <div class="error-message" id="word-error-message"></div>
+                <div class="success-message" id="word-success-message"></div>
+            </div>
+
+            <div id="loading" class="loading hidden">
+                <div class="spinner"></div>
+                Creating game session...
+            </div>
+        </div>
+
+        <div class="card" style="margin-top: 20px; text-align: center;">
+            <h3>Quick Test</h3>
+            <p>Want to test the game quickly?</p>
+            <a href="/test" class="btn btn-warning">Test Page</a>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/script.js"></script>
+    <script>
+        let socket;
+
+        function initializeSocket() {
+            socket = io();
+            
+            socket.on('connect', () => {
+                console.log('Connected to server');
+            });
+
+            socket.on('sessionCreated', (data) => {
+                hideLoading();
+                // Redirect to host control page
+                window.location.href = `/host/${data.sessionId}`;
+            });
+
+            socket.on('error', (message) => {
+                hideLoading();
+                showError(message);
+            });
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('success-message');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            setTimeout(() => {
+                successDiv.style.display = 'none';
+            }, 3000);
+        }
+
+        function showWordError(message) {
+            const errorDiv = document.getElementById('word-error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function showWordSuccess(message) {
+            const successDiv = document.getElementById('word-success-message');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            setTimeout(() => {
+                successDiv.style.display = 'none';
+            }, 3000);
+        }
+
+        function showLoading() {
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('setup-form').style.opacity = '0.5';
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('setup-form').style.opacity = '1';
+        }
+
+        // Validate duration input
+        function validateDuration(duration) {
+            const num = parseInt(duration);
+            if (isNaN(num) || num < 5 || num > 60) {
+                return 'Time must be 5-60 minutes';
+            }
+            return null;
+        }
+
+        // Handle form submission
+        document.getElementById('gameSetupForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const duration = document.getElementById('duration').value;
+            const errorMessage = validateDuration(duration);
+            
+            if (errorMessage) {
+                showError(errorMessage);
+                return;
+            }
+
+            showLoading();
+            socket.emit('createSession', { duration: parseInt(duration) });
+        });
+
+        // Handle word addition
+        document.getElementById('wordForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const wordInput = document.getElementById('newWord');
+            const word = wordInput.value.trim();
+            
+            if (!word) {
+                showWordError('Please enter a word');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/add-word', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ word })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showWordSuccess(result.message);
+                    wordInput.value = '';
+                } else {
+                    showWordError(result.error);
+                }
+            } catch (error) {
+                showWordError('Failed to add word. Please try again.');
+            }
+        });
+
+        // Input validation for duration (only on Enter or blur)
+        const durationInput = document.getElementById('duration');
+        let durationTimer;
+
+        durationInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                validateDurationInput();
+            }
+        });
+
+        durationInput.addEventListener('blur', validateDurationInput);
+
+        function validateDurationInput() {
+            const duration = durationInput.value;
+            const errorMessage = validateDuration(duration);
+            
+            if (errorMessage) {
+                durationInput.style.borderColor = '#e74c3c';
+                showError(errorMessage);
+            } else {
+                durationInput.style.borderColor = '#27ae60';
+            }
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeSocket();
+        });
+    </script>
+</body>
+</html>

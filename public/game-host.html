@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spy Word Game - Host Control</title>
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="icon" href="/icon.png" type="image/png">
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>🎯 Host Control Panel</h1>
+            
+            <div id="session-info">
+                <h2>Session: <span id="session-id"></span></h2>
+                <div class="game-status" id="game-status">
+                    <span class="status-lobby">Lobby Phase - Waiting for Players</span>
+                </div>
+            </div>
+
+            <!-- Lobby Phase -->
+            <div id="lobby-phase" class="hidden">
+                <h3>Player Lobby</h3>
+                
+                <div class="join-url" id="join-url" onclick="copyToClipboard()">
+                    <strong>Join URL:</strong><br>
+                    <span id="join-url-text">Loading...</span>
+                    <br><small>Click to copy</small>
+                </div>
+
+                <div class="qr-code" id="qr-code">
+                    <img id="qr-image" alt="QR Code" style="display: none;">
+                </div>
+
+                <div class="lobby-timer">
+                    Lobby closes in: <span id="lobby-countdown">90</span> seconds
+                </div>
+
+                <div class="info-message">
+                    <strong>Connected Players: <span id="player-count">0</span></strong>
+                </div>
+
+                <div class="player-list" id="player-list">
+                    <div class="loading">No players yet...</div>
+                </div>
+
+                <div class="btn-group" id="lobby-controls">
+                    <button id="extend-lobby-btn" class="btn btn-warning">
+                        Extend Lobby (+30s)
+                    </button>
+                    <button id="abort-game-btn" class="btn btn-danger">
+                        Abort Game
+                    </button>
+                </div>
+
+                <!-- Lobby End Controls -->
+                <div id="lobby-end-controls" class="hidden">
+                    <div class="warning-message" id="lobby-end-message">
+                        Lobby time expired!
+                    </div>
+                    
+                    <div class="btn-group">
+                        <button id="start-game-btn" class="btn btn-success btn-pulse" disabled>
+                            Start Game
+                        </button>
+                        <button id="extend-lobby-btn-2" class="btn btn-warning">
+                            Extend Lobby (+30s)
+                        </button>
+                        <button id="abort-game-btn-2" class="btn btn-danger">
+                            Abort Game
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Game Preparation Phase -->
+            <div id="prep-phase" class="hidden">
+                <h3>Game Ready</h3>
+                
+                <div class="success-message">
+                    All roles have been assigned!
+                </div>
+
+                <div class="info-message">
+                    Players: <span id="game-player-count"></span> | 
+                    Spies: <span id="spy-count"></span>
+                </div>
+
+                <div class="btn-group">
+                    <button id="start-timer-btn" class="btn btn-success btn-full btn-pulse">
+                        🚀 Start Game Timer
+                    </button>
+                </div>
+            </div>
+
+            <!-- Active Game Phase -->
+            <div id="game-phase" class="hidden">
+                <h3>Game in Progress</h3>
+                
+                <div class="timer" id="game-timer">15:00</div>
+                
+                <div class="info-message">
+                    Game Duration: <span id="game-duration-display"></span> minutes
+                </div>
+
+                <div class="btn-group">
+                    <button id="abort-active-game-btn" class="btn btn-danger">
+                        Abort Game
+                    </button>
+                </div>
+            </div>
+
+            <!-- Game End Phase -->
+            <div id="end-phase" class="hidden">
+                <h2>🎉 Game Over!</h2>
+                
+                <div class="spy-reveal" id="spy-reveal">
+                    <h3>The Spies Were:</h3>
+                    <div class="spy-list" id="spy-names"></div>
+                </div>
+
+                <div class="btn-group">
+                    <button id="new-round-btn" class="btn btn-success">
+                        New Round
+                    </button>
+                    <button id="close-game-btn" class="btn btn-primary">
+                        Close Game
+                    </button>
+                </div>
+            </div>
+
+            <div class="error-message" id="error-message"></div>
+            <div class="success-message" id="success-message"></div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/script.js"></script>
+    <script>
+        let socket;
+        let sessionId;
+        let lobbyTimer;
+        let gameTimer;
+        let gameStartTime;
+        let gameDuration; // in seconds
+
+        function initializeSocket() {
+            socket = io();
+            
+            socket.on('connect', () => {
+                console.log('Connected to server');
+                // Get session ID from URL
+                sessionId = window.location.pathname.split('/')[2];
+                document.getElementById('session-id').textContent = sessionId;
+                
+                // Join the session room as host
+                socket.emit('joinSessionAsHost', { sessionId });
+            });
+
+            socket.on('hostJoinedSession', (data) => {
+                console.log('Host joined session successfully');
+                
+                // Load QR code and join URL
+                loadJoinInfo();
+                
+                // Show lobby phase
+                showLobbyPhase();
+                
+                // Update player list if any players are already connected
+                if (data.players && data.players.length > 0) {
+                    updatePlayerList(data.players, data.playerCount);
+                }
+            });
+
+            socket.on('playersUpdated', (data) => {
+                updatePlayerList(data.players, data.count);
+            });
+
+            socket.on('lobbyEnded', (data) => {
+                clearInterval(lobbyTimer);
+                showLobbyEndControls(data.playerCount);
+            });
+
+            socket.on('lobbyExtended', (data) => {
+                showSuccess(`Lobby extended by ${data.additionalTime} seconds`);
+                startLobbyTimer(data.additionalTime);
+                document.getElementById('lobby-end-controls').classList.add('hidden');
+                document.getElementById('lobby-controls').classList.remove('hidden');
+            });
+
+            socket.on('gameStarted', (data) => {
+                gameDuration = data.duration;
+                showPrepPhase();
+            });
+
+            socket.on('timerStarted', (data) => {
+                gameStartTime = data.startTime;
+                gameDuration = data.duration;
+                showGamePhase();
+                startGameTimer();
+            });
+
+            socket.on('gameEnded', (data) => {
+                clearInterval(gameTimer);
+                showEndPhase(data.spies);
+            });
+
+            socket.on('newRoundStarted', () => {
+                showPrepPhase();
+            });
+
+            socket.on('gameAborted', () => {
+                showSuccess('Game aborted successfully');
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 2000);
+            });
+
+            socket.on('gameClosed', () => {
+                showSuccess('Game closed successfully');
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 2000);
+            });
+
+            socket.on('error', (message) => {
+                showError(message);
+                
+                // If session not found, redirect to home
+                if (message.includes('Session not found')) {
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 3000);
+                }
+            });
+        }
+
+        async function loadJoinInfo() {
+            try {
+                const response = await fetch(`/api/qr/${sessionId}`);
+                const data = await response.json();
+                
+                document.getElementById('join-url-text').textContent = data.url;
+                document.getElementById('qr-image').src = data.qrCode;
+                document.getElementById('qr-image').style.display = 'block';
+            } catch (error) {
+                console.error('Failed to load join info:', error);
+            }
+        }
+
+        function copyToClipboard() {
+            const url = document.getElementById('join-url-text').textContent;
+            navigator.clipboard.writeText(url).then(() => {
+                showSuccess('Join URL copied to clipboard!');
+            });
+        }
+
+        function showLobbyPhase() {
+            document.getElementById('lobby-phase').classList.remove('hidden');
+            document.getElementById('game-status').innerHTML = 
+                '<span class="status-lobby">Lobby Phase - Waiting for Players</span>';
+            
+            // Start lobby countdown
+            startLobbyTimer(90);
+        }
+
+        function showPrepPhase() {
+            hideAllPhases();
+            document.getElementById('prep-phase').classList.remove('hidden');
+            document.getElementById('game-status').innerHTML = 
+                '<span class="status-game">Game Ready - Click to Start Timer</span>';
+        }
+
+        function showGamePhase() {
+            hideAllPhases();
+            document.getElementById('game-phase').classList.remove('hidden');
+            document.getElementById('game-status').innerHTML = 
+                '<span class="status-game">Game in Progress</span>';
+            
+            const minutes = Math.floor(gameDuration / 60);
+            document.getElementById('game-duration-display').textContent = minutes;
+        }
+
+        function showEndPhase(spies) {
+            hideAllPhases();
+            document.getElementById('end-phase').classList.remove('hidden');
+            document.getElementById('game-status').innerHTML = 
+                '<span class="status-ended">Game Ended</span>';
+            
+            document.getElementById('spy-names').textContent = spies.join(', ') || 'No spies found';
+        }
+
+        function hideAllPhases() {
+            document.getElementById('lobby-phase').classList.add('hidden');
+            document.getElementById('prep-phase').classList.add('hidden');
+            document.getElementById('game-phase').classList.add('hidden');
+            document.getElementById('end-phase').classList.add('hidden');
+        }
+
+        function showLobbyEndControls(playerCount) {
+            document.getElementById('lobby-controls').classList.add('hidden');
+            document.getElementById('lobby-end-controls').classList.remove('hidden');
+            
+            const startBtn = document.getElementById('start-game-btn');
+            if (playerCount >= 4) {
+                startBtn.disabled = false;
+                startBtn.textContent = `Start Game (${playerCount} players)`;
+                document.getElementById('lobby-end-message').textContent = 'Ready to start!';
+                document.getElementById('lobby-end-message').className = 'success-message';
+            } else {
+                startBtn.disabled = true;
+                startBtn.textContent = `Need ${4 - playerCount} more players`;
+                document.getElementById('lobby-end-message').textContent = 'Minimum 4 players required';
+                document.getElementById('lobby-end-message').className = 'error-message';
+            }
+        }
+
+        function updatePlayerList(players, count) {
+            document.getElementById('player-count').textContent = count;
+            document.getElementById('game-player-count').textContent = count;
+            
+            const spyCount = Math.max(Math.floor(count / 3), 1);
+            document.getElementById('spy-count').textContent = spyCount;
+            
+            const playerListDiv = document.getElementById('player-list');
+            if (players.length === 0) {
+                playerListDiv.innerHTML = '<div class="loading">No players yet...</div>';
+            } else {
+                playerListDiv.innerHTML = players.map(player => 
+                    `<div class="player-item ${player.isHost ? 'host' : ''}">${player.nickname}</div>`
+                ).join('');
+            }
+        }
+
+        function startLobbyTimer(seconds) {
+            let timeLeft = seconds;
+            document.getElementById('lobby-countdown').textContent = timeLeft;
+            
+            lobbyTimer = setInterval(() => {
+                timeLeft--;
+                document.getElementById('lobby-countdown').textContent = timeLeft;
+                
+                if (timeLeft <= 0) {
+                    clearInterval(lobbyTimer);
+                }
+            }, 1000);
+        }
+
+        function startGameTimer() {
+            const updateTimer = () => {
+                const elapsed = Date.now() - gameStartTime;
+                const remaining = Math.max(0, gameDuration * 1000 - elapsed);
+                
+                const minutes = Math.floor(remaining / 60000);
+                const seconds = Math.floor((remaining % 60000) / 1000);
+                
+                const display = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                document.getElementById('game-timer').textContent = display;
+                
+                // Add visual warnings
+                const timerEl = document.getElementById('game-timer');
+                timerEl.className = 'timer';
+                
+                if (remaining <= 60000) { // Last minute
+                    timerEl.classList.add('critical');
+                } else if (remaining <= 300000) { // Last 5 minutes
+                    timerEl.classList.add('warning');
+                }
+                
+                if (remaining <= 0) {
+                    clearInterval(gameTimer);
+                }
+            };
+            
+            updateTimer();
+            gameTimer = setInterval(updateTimer, 1000);
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('success-message');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            setTimeout(() => {
+                successDiv.style.display = 'none';
+            }, 3000);
+        }
+
+        // Event listeners
+        document.getElementById('extend-lobby-btn').addEventListener('click', () => {
+            socket.emit('extendLobby', { sessionId });
+        });
+
+        document.getElementById('extend-lobby-btn-2').addEventListener('click', () => {
+            socket.emit('extendLobby', { sessionId });
+        });
+
+        document.getElementById('abort-game-btn').addEventListener('click', () => {
+            if (confirm('Are you sure you want to abort the game?')) {
+                socket.emit('abortGame', { sessionId });
+            }
+        });
+
+        document.getElementById('abort-game-btn-2').addEventListener('click', () => {
+            if (confirm('Are you sure you want to abort the game?')) {
+                socket.emit('abortGame', { sessionId });
+            }
+        });
+
+        document.getElementById('abort-active-game-btn').addEventListener('click', () => {
+            if (confirm('Are you sure you want to abort the active game?')) {
+                socket.emit('abortGame', { sessionId });
+            }
+        });
+
+        document.getElementById('start-game-btn').addEventListener('click', () => {
+            socket.emit('startGame', { sessionId });
+        });
+
+        document.getElementById('start-timer-btn').addEventListener('click', () => {
+            socket.emit('startTimer', { sessionId });
+        });
+
+        document.getElementById('new-round-btn').addEventListener('click', () => {
+            socket.emit('newRound', { sessionId });
+        });
+
+        document.getElementById('close-game-btn').addEventListener('click', () => {
+            socket.emit('closeGame', { sessionId });
+        });
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeSocket();
+        });
+    </script>
+</body>
+</html>
