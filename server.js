@@ -174,6 +174,29 @@ app.get('/test', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'test.html'));
 });
 
+// Emergency health check endpoint for mobile fallback
+app.post('/health-check', express.json(), (req, res) => {
+    const { sessionId, nickname, timestamp } = req.body;
+    console.log(`Health check from ${nickname} in session ${sessionId}`);
+    
+    const session = gameSessions.get(sessionId);
+    if (session) {
+        res.json({
+            status: 'ok',
+            sessionExists: true,
+            playerCount: session.players.size,
+            gameState: session.gameState,
+            serverTime: Date.now()
+        });
+    } else {
+        res.json({
+            status: 'ok',
+            sessionExists: false,
+            serverTime: Date.now()
+        });
+    }
+});
+
 // API endpoint to add words
 app.post('/api/add-word', (req, res) => {
     const { word } = req.body;
@@ -529,6 +552,42 @@ io.on('connection', (socket) => {
     socket.on('ping', () => {
         // Respond to client ping with pong
         socket.emit('pong');
+    });
+    
+    // Handle aggressive mobile keep-alive events
+    socket.on('keep-alive', (data) => {
+        // Acknowledge keep-alive
+        socket.emit('keep-alive-ack', { timestamp: Date.now() });
+    });
+    
+    socket.on('background-mode', (data) => {
+        console.log(`Socket ${socket.id} entered background mode`);
+        // Send immediate acknowledgment
+        socket.emit('background-ack', { timestamp: Date.now() });
+    });
+    
+    socket.on('foreground-mode', (data) => {
+        console.log(`Socket ${socket.id} returned to foreground`);
+        // Send session status update
+        const sessionId = data.sessionId;
+        const session = gameSessions.get(sessionId);
+        if (session && session.players.has(socket.id)) {
+            socket.emit('session-status', {
+                status: 'connected',
+                playerCount: session.players.size,
+                gameState: session.gameState,
+                timestamp: Date.now()
+            });
+        }
+    });
+    
+    socket.on('window-blur', (data) => {
+        // Track window blur for connection management
+        console.log(`Socket ${socket.id} window blurred`);
+    });
+    
+    socket.on('page-freeze', (data) => {
+        console.log(`Socket ${socket.id} page frozen`);
     });
 
     socket.on('disconnect', () => {

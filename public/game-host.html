@@ -147,19 +147,22 @@
 
         function initializeSocket() {
             socket = io({
-                // Mobile-friendly socket options for hosts
-                transports: ['polling', 'websocket'], // Prefer polling for stability
+                // Ultra-aggressive mobile settings for hosts too
+                transports: ['polling'], // POLLING ONLY
                 upgrade: false,
                 rememberUpgrade: false,
-                timeout: 3000,
+                timeout: 2000,
                 forceNew: true,
                 reconnection: true,
-                reconnectionDelay: 500,
-                reconnectionDelayMax: 2000,
-                maxReconnectionAttempts: 50,
-                pingInterval: 10000,
-                pingTimeout: 5000,
-                closeOnBeforeunload: false
+                reconnectionDelay: 200,
+                reconnectionDelayMax: 1000,
+                maxReconnectionAttempts: 999,
+                pingInterval: 5000,
+                pingTimeout: 3000,
+                closeOnBeforeunload: false,
+                jsonp: false,
+                autoConnect: true,
+                multiplex: false
             });
             
             socket.on('connect', () => {

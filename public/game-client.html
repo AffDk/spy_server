@@ -135,28 +135,36 @@
         let audioContext;
         let alarmTimeout;
 
-        // Mobile-specific connection variables
+        // Ultra-aggressive mobile connection variables
         let connectionRetries = 0;
         let lastHeartbeat = Date.now();
         let heartbeatInterval;
         let connectionStatus = 'disconnected';
+        let aggressiveReconnectInterval;
+        let backgroundKeepAliveInterval;
+        let isPageVisible = true;
+        let lastActivity = Date.now();
 
         function initializeSocket() {
             socket = io({
-                // Aggressive mobile-friendly options
-                transports: ['polling', 'websocket'], // Prefer polling for mobile stability
-                upgrade: false, // Don't upgrade to prevent connection drops
+                // Ultra-aggressive mobile-only options - POLLING ONLY
+                transports: ['polling'], // ONLY polling - no WebSocket at all
+                upgrade: false, // Never upgrade
                 rememberUpgrade: false,
-                timeout: 3000, // Shorter timeout for faster detection
-                forceNew: true, // Force new connection each time
+                timeout: 2000, // Very short timeout
+                forceNew: true, // Always force new connections
                 reconnection: true,
-                reconnectionDelay: 500, // Faster initial reconnection
-                reconnectionDelayMax: 2000, // Shorter max delay
-                maxReconnectionAttempts: 50, // More attempts
-                // Mobile-specific options
-                pingInterval: 10000, // Send ping every 10 seconds
-                pingTimeout: 5000, // Wait 5 seconds for pong
-                closeOnBeforeunload: false // Don't close on page background
+                reconnectionDelay: 200, // Very fast reconnection
+                reconnectionDelayMax: 1000, // Max 1 second delay
+                maxReconnectionAttempts: 999, // Essentially infinite attempts
+                // Aggressive polling options
+                pingInterval: 5000, // Ping every 5 seconds
+                pingTimeout: 3000, // Short ping timeout
+                closeOnBeforeunload: false, // Never close on background
+                // Force polling-specific options
+                jsonp: false, // Disable JSONP for better mobile support
+                autoConnect: true,
+                multiplex: false // Disable multiplexing for stability
             });
             
             socket.on('connect', () => {
@@ -540,25 +548,65 @@
             }
         });
 
-        // Mobile connection management functions
+        // Ultra-aggressive mobile connection management
         function startHeartbeat() {
-            if (heartbeatInterval) {
-                clearInterval(heartbeatInterval);
-            }
+            // Clear any existing intervals
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            if (aggressiveReconnectInterval) clearInterval(aggressiveReconnectInterval);
+            if (backgroundKeepAliveInterval) clearInterval(backgroundKeepAliveInterval);
             
+            // Main heartbeat - every 3 seconds
             heartbeatInterval = setInterval(() => {
                 if (socket && socket.connected) {
-                    // Send ping to server
                     socket.emit('ping');
+                    lastActivity = Date.now();
                     
-                    // Check if we received a recent pong
-                    if (Date.now() - lastHeartbeat > 15000) { // 15 seconds timeout
+                    // Check for timeout - much shorter on mobile
+                    if (Date.now() - lastHeartbeat > 8000) { // 8 seconds timeout
                         console.log('Heartbeat timeout, forcing reconnection');
-                        socket.disconnect();
-                        socket.connect();
+                        forceReconnect();
+                    }
+                } else {
+                    // Not connected - try to reconnect immediately
+                    forceReconnect();
+                }
+            }, 3000); // Every 3 seconds
+            
+            // Aggressive reconnect check - every second
+            aggressiveReconnectInterval = setInterval(() => {
+                if (!socket || !socket.connected) {
+                    if (connectionRetries < 5) { // First 5 attempts very fast
+                        forceReconnect();
                     }
                 }
-            }, 10000); // Every 10 seconds
+            }, 1000);
+            
+            // Background keep-alive - even when page is hidden
+            backgroundKeepAliveInterval = setInterval(() => {
+                // Try to maintain connection even in background
+                if (socket && socket.connected) {
+                    socket.emit('keep-alive', { timestamp: Date.now() });
+                }
+                
+                // Force reconnect if we've been background too long
+                if (!isPageVisible && Date.now() - lastActivity > 30000) {
+                    console.log('Background timeout, forcing reconnection');
+                    forceReconnect();
+                }
+            }, 2000); // Every 2 seconds
+        }
+        
+        function forceReconnect() {
+            console.log('Forcing reconnection...');
+            connectionRetries++;
+            
+            if (socket) {
+                socket.disconnect();
+                // Small delay then reconnect
+                setTimeout(() => {
+                    socket.connect();
+                }, 100);
+            }
         }
         
         function showConnectionError() {
@@ -595,22 +643,90 @@
             }
         }
 
-        // Handle page visibility change for mobile stability
+        // Ultra-aggressive page visibility handling
         document.addEventListener('visibilitychange', () => {
+            isPageVisible = !document.hidden;
+            
             if (document.hidden) {
-                // Page went to background
-                console.log('Page backgrounded - maintaining connection');
+                // Page went to background - FIGHT FOR CONNECTION
+                console.log('Page backgrounded - AGGRESSIVE connection maintenance');
+                lastActivity = Date.now();
+                
+                // Audio context resume
                 if (audioContext && audioContext.state === 'suspended') {
                     audioContext.resume();
                 }
+                
+                // Immediately send keep-alive
+                if (socket && socket.connected) {
+                    socket.emit('background-mode', { timestamp: Date.now() });
+                }
+                
+                // Set up aggressive background polling
+                setTimeout(() => {
+                    if (document.hidden && socket) { // Still hidden after 1 second
+                        console.log('Still in background - starting aggressive reconnection');
+                        for (let i = 0; i < 5; i++) {
+                            setTimeout(() => {
+                                if (document.hidden && socket && !socket.connected) {
+                                    forceReconnect();
+                                }
+                            }, i * 500);
+                        }
+                    }
+                }, 1000);
             } else {
-                // Page came back to foreground
-                console.log('Page foregrounded - checking connection');
-                if (socket && !socket.connected) {
-                    console.log('Reconnecting after page foreground');
-                    socket.connect();
+                // Page came back to foreground - IMMEDIATE RECONNECTION
+                console.log('Page foregrounded - IMMEDIATE connection check');
+                lastActivity = Date.now();
+                
+                // Multiple immediate reconnection attempts
+                if (!socket || !socket.connected) {
+                    console.log('Not connected - starting immediate reconnection sequence');
+                    for (let i = 0; i < 3; i++) {
+                        setTimeout(() => {
+                            forceReconnect();
+                        }, i * 200);
+                    }
+                } else {
+                    // Send immediate keep-alive to confirm connection
+                    socket.emit('foreground-mode', { 
+                        timestamp: Date.now(),
+                        sessionId: sessionId,
+                        nickname: playerNickname 
+                    });
                 }
             }
+        });
+        
+        // Additional mobile-specific event handlers
+        window.addEventListener('focus', () => {
+            console.log('Window focused - checking connection');
+            isPageVisible = true;
+            if (socket && !socket.connected) {
+                forceReconnect();
+            }
+        });
+        
+        window.addEventListener('blur', () => {
+            console.log('Window blurred - maintaining connection');
+            isPageVisible = false;
+            if (socket && socket.connected) {
+                socket.emit('window-blur', { timestamp: Date.now() });
+            }
+        });
+        
+        // Page lifecycle events for mobile
+        document.addEventListener('freeze', () => {
+            console.log('Page frozen - emergency keep-alive');
+            if (socket && socket.connected) {
+                socket.emit('page-freeze', { timestamp: Date.now() });
+            }
+        });
+        
+        document.addEventListener('resume', () => {
+            console.log('Page resumed - emergency reconnection');
+            forceReconnect();
         });
         
         // Prevent sleep on mobile (experimental)
@@ -635,9 +751,37 @@
             }
         }
 
+        // Emergency HTTP fallback for when Socket.io fails completely
+        function emergencyHttpCheck() {
+            if (sessionId && playerNickname) {
+                fetch(window.location.origin + '/health-check', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sessionId: sessionId,
+                        nickname: playerNickname,
+                        timestamp: Date.now()
+                    })
+                }).then(response => {
+                    if (response.ok) {
+                        console.log('Emergency HTTP check successful');
+                        // If HTTP works but socket doesn't, force socket reconnection
+                        if (socket && !socket.connected) {
+                            forceReconnect();
+                        }
+                    }
+                }).catch(err => {
+                    console.log('Emergency HTTP check failed:', err);
+                });
+            }
+        }
+
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', () => {
             initializeSocket();
+            
+            // Start emergency HTTP fallback checks every 30 seconds
+            setInterval(emergencyHttpCheck, 30000);
         });
 
         // Handle page refresh/close
