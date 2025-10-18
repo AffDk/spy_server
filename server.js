@@ -525,6 +525,12 @@ io.on('connection', (socket) => {
         console.log(`Session ${sessionId} closed`);
     });
 
+    // Handle mobile heartbeat ping/pong
+    socket.on('ping', () => {
+        // Respond to client ping with pong
+        socket.emit('pong');
+    });
+
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
         

@@ -226,7 +226,7 @@ npm install -g @railway/cli
 railway login
 
 # Deploy from your current directory
-railway deploy
+railway up
 
 # Get your live URL
 railway domain
@@ -535,6 +535,14 @@ If the command line isn't working, you can also:
 - Browser notification permissions required
 - May not work in private/incognito mode
 - iOS Safari has limited notification support
+
+**"Mobile Connection Drops When Screen Turns Off"**
+- This is a common mobile browser limitation
+- The game now uses aggressive reconnection strategies
+- Keep the browser tab active when possible
+- Use "Add to Home Screen" on mobile for better stability
+- Connection will automatically restore when screen turns back on
+- Consider enabling "Stay Awake" mode during games
 
 ### Debug Mode
 ```bash

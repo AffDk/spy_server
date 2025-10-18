@@ -147,16 +147,19 @@
 
         function initializeSocket() {
             socket = io({
-                // Mobile-friendly socket options
-                transports: ['websocket', 'polling'],
-                upgrade: true,
+                // Mobile-friendly socket options for hosts
+                transports: ['polling', 'websocket'], // Prefer polling for stability
+                upgrade: false,
                 rememberUpgrade: false,
-                timeout: 5000,
-                forceNew: false,
+                timeout: 3000,
+                forceNew: true,
                 reconnection: true,
-                reconnectionDelay: 1000,
-                reconnectionDelayMax: 5000,
-                maxReconnectionAttempts: 10
+                reconnectionDelay: 500,
+                reconnectionDelayMax: 2000,
+                maxReconnectionAttempts: 50,
+                pingInterval: 10000,
+                pingTimeout: 5000,
+                closeOnBeforeunload: false
             });
             
             socket.on('connect', () => {
