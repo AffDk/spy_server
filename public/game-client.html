@@ -6,10 +6,6 @@
     <title>Spy Word Game - Player</title>
     <link rel="stylesheet" href="/styles.css">
     <link rel="icon" href="/icon.png" type="image/png">
-    <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#ff6b35">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body>
     <div class="container">
@@ -139,17 +135,9 @@
         let audioContext;
         let alarmTimeout;
 
-        // Simple connection variables
-        let connectionRetries = 0;
-        let heartbeatInterval;
-        let isPageVisible = true;
-
-        
-
-
         function initializeSocket() {
             socket = io({
-                // Simplified stable configuration
+                // Simple, stable configuration
                 transports: ['websocket', 'polling'],
                 upgrade: true,
                 timeout: 20000,
@@ -162,7 +150,6 @@
             
             socket.on('connect', () => {
                 console.log('Connected to server');
-                connectionRetries = 0;
                 
                 // Get session ID from URL
                 sessionId = window.location.pathname.split('/')[2];
@@ -179,7 +166,6 @@
             
             socket.on('disconnect', (reason) => {
                 console.log('Disconnected from server:', reason);
-                connectionRetries++;
                 showConnectionError();
             });
             
@@ -514,62 +500,21 @@
             }
         });
 
-        // Ultra-aggressive mobile connection management
-        function startHeartbeat() {
-            // Clear any existing intervals
-            if (heartbeatInterval) clearInterval(heartbeatInterval);
-            if (aggressiveReconnectInterval) clearInterval(aggressiveReconnectInterval);
-            if (backgroundKeepAliveInterval) clearInterval(backgroundKeepAliveInterval);
-            
-            // Main heartbeat - every 3 seconds
-            heartbeatInterval = setInterval(() => {
-                if (socket && socket.connected) {
-                    socket.emit('ping');
-                    lastActivity = Date.now();
-                    
-                    // Check for timeout - much shorter on mobile
-                    if (Date.now() - lastHeartbeat > 8000) { // 8 seconds timeout
-                        console.log('Heartbeat timeout, forcing reconnection');
-                        forceReconnect();
-                    }
-                } else {
-                    // Not connected - try to reconnect immediately
-                    forceReconnect();
-                }
-            }, 3000); // Every 3 seconds
-            
-            // Aggressive reconnect check - every second
-            aggressiveReconnectInterval = setInterval(() => {
-                if (!socket || !socket.connected) {
-                    if (connectionRetries < 5) { // First 5 attempts very fast
-                        forceReconnect();
-                    }
-                }
-            }, 1000);
-            
-            // Background keep-alive - even when page is hidden
-            backgroundKeepAliveInterval = setInterval(() => {
-                // Try to maintain connection even in background
-                if (socket && socket.connected) {
-                    socket.emit('keep-alive', { timestamp: Date.now() });
-                }
-                
-                // Force reconnect if we've been background too long
-                if (!isPageVisible && Date.now() - lastActivity > 30000) {
-                    console.log('Background timeout, forcing reconnection');
-                    forceReconnect();
-                }
-            }, 2000); // Every 2 seconds
+        // Simple connection error display functions
+        function showConnectionError() {
+            showError('Connection lost. Attempting to reconnect...');
         }
-        
-        function forceReconnect() {
-            console.log('Forcing reconnection...');
-            connectionRetries++;
-            
-            if (socket) {
-                socket.disconnect();
-                // Small delay then reconnect
-                setTimeout(() => {
+
+        function hideConnectionError() {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.style.display = 'none';
+        }
+
+        // Initialize the game
+        initializeSocket();
+    </script>
+</body>
+</html>
                     socket.connect();
                 }, 100);
             }
