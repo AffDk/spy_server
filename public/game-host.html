@@ -146,7 +146,18 @@
         let gameDuration; // in seconds
 
         function initializeSocket() {
-            socket = io();
+            socket = io({
+                // Mobile-friendly socket options
+                transports: ['websocket', 'polling'],
+                upgrade: true,
+                rememberUpgrade: false,
+                timeout: 5000,
+                forceNew: false,
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+                maxReconnectionAttempts: 10
+            });
             
             socket.on('connect', () => {
                 console.log('Connected to server');
@@ -156,6 +167,16 @@
                 
                 // Join the session room as host
                 socket.emit('joinSessionAsHost', { sessionId });
+            });
+            
+            socket.on('reconnect', () => {
+                console.log('Reconnected to server');
+                showSuccess('Reconnected to game');
+            });
+            
+            socket.on('disconnect', (reason) => {
+                console.log('Disconnected from server:', reason);
+                showError('Connection lost. Attempting to reconnect...');
             });
 
             socket.on('hostJoinedSession', (data) => {
@@ -184,7 +205,11 @@
 
             socket.on('lobbyExtended', (data) => {
                 showSuccess(`Lobby extended by ${data.additionalTime} seconds`);
-                startLobbyTimer(data.additionalTime);
+                // Clear existing timer before starting new one
+                if (lobbyTimer) {
+                    clearInterval(lobbyTimer);
+                }
+                startLobbyTimer(30); // Always reset to 30 seconds when extending
                 document.getElementById('lobby-end-controls').classList.add('hidden');
                 document.getElementById('lobby-controls').classList.remove('hidden');
             });
@@ -334,6 +359,12 @@
         }
 
         function startLobbyTimer(seconds) {
+            // Clear any existing timer first
+            if (lobbyTimer) {
+                clearInterval(lobbyTimer);
+                lobbyTimer = null;
+            }
+            
             let timeLeft = seconds;
             document.getElementById('lobby-countdown').textContent = timeLeft;
             
@@ -343,6 +374,9 @@
                 
                 if (timeLeft <= 0) {
                     clearInterval(lobbyTimer);
+                    lobbyTimer = null;
+                    // Stop the timer at 0, don't go negative
+                    document.getElementById('lobby-countdown').textContent = 0;
                 }
             }, 1000);
         }

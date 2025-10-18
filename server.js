@@ -336,7 +336,12 @@ io.on('connection', (socket) => {
             });
         }, 30000);
 
-        io.to(sessionId).emit('lobbyExtended', { additionalTime: 30 });
+        // Emit lobby extended with reset timer
+        io.to(sessionId).emit('lobbyExtended', { 
+            additionalTime: 30,
+            timeLeft: 30,
+            resetTimer: true 
+        });
         console.log(`Lobby extended for session ${sessionId}`);
     });
 
