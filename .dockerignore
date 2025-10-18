@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+__tests__
+test-simulator.js
+prepare-production.sh
+DEPLOY_TO_RENDER.md
+README.md
