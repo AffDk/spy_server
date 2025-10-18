@@ -174,9 +174,109 @@ app.get('/test', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'test.html'));
 });
 
+// Service worker endpoint
+app.get('/sw.js', (req, res) => {
+    res.setHeader('Content-Type', 'application/javascript');
+    res.setHeader('Service-Worker-Allowed', '/');
+    res.sendFile(path.join(__dirname, 'public', 'sw.js'));
+});
+
+// PWA manifest endpoint
+app.get('/manifest.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/manifest+json');
+    res.sendFile(path.join(__dirname, 'public', 'manifest.json'));
+});
+
+// Server-Sent Events fallback for ultra-stubborn mobile browsers
+const sseClients = new Map(); // sessionId -> Set of response objects
+
+app.get('/events/:sessionId/:nickname', (req, res) => {
+    const { sessionId, nickname } = req.params;
+    
+    // Set SSE headers
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Cache-Control',
+        'X-Accel-Buffering': 'no' // Disable nginx buffering
+    });
+    
+    console.log(`SSE connection opened: ${nickname} in session ${sessionId}`);
+    
+    // Add client to SSE clients
+    if (!sseClients.has(sessionId)) {
+        sseClients.set(sessionId, new Set());
+    }
+    sseClients.get(sessionId).add(res);
+    
+    // Send initial connection confirmation
+    res.write(`data: ${JSON.stringify({
+        type: 'sse-connected',
+        sessionId,
+        nickname,
+        timestamp: Date.now()
+    })}\n\n`);
+    
+    // Send keep-alive every 10 seconds
+    const keepAlive = setInterval(() => {
+        if (!res.destroyed) {
+            res.write(`data: ${JSON.stringify({
+                type: 'keep-alive',
+                timestamp: Date.now()
+            })}\n\n`);
+        } else {
+            clearInterval(keepAlive);
+        }
+    }, 10000);
+    
+    // Clean up on disconnect
+    req.on('close', () => {
+        console.log(`SSE connection closed: ${nickname} in session ${sessionId}`);
+        clearInterval(keepAlive);
+        if (sseClients.has(sessionId)) {
+            sseClients.get(sessionId).delete(res);
+            if (sseClients.get(sessionId).size === 0) {
+                sseClients.delete(sessionId);
+            }
+        }
+    });
+});
+
+// Function to broadcast via SSE
+function broadcastSSE(sessionId, data) {
+    if (sseClients.has(sessionId)) {
+        const clients = sseClients.get(sessionId);
+        clients.forEach(res => {
+            if (!res.destroyed) {
+                try {
+                    res.write(`data: ${JSON.stringify(data)}\n\n`);
+                } catch (error) {
+                    console.log('SSE write error:', error);
+                    clients.delete(res);
+                }
+            } else {
+                clients.delete(res);
+            }
+        });
+    }
+}
+
 // Emergency health check endpoint for mobile fallback
 app.post('/health-check', express.json(), (req, res) => {
-    const { sessionId, nickname, timestamp } = req.body;
+    const { sessionId, nickname, timestamp, type } = req.body;
+    
+    if (type === 'service-worker-ping') {
+        console.log('Service worker ping received');
+        res.json({
+            status: 'ok',
+            type: 'service-worker-response',
+            serverTime: Date.now()
+        });
+        return;
+    }
+    
     console.log(`Health check from ${nickname} in session ${sessionId}`);
     
     const session = gameSessions.get(sessionId);
@@ -588,6 +688,11 @@ io.on('connection', (socket) => {
     
     socket.on('page-freeze', (data) => {
         console.log(`Socket ${socket.id} page frozen`);
+    });
+    
+    socket.on('touch-keep-alive', (data) => {
+        // Acknowledge touch-based keep-alive
+        socket.emit('touch-ack', { timestamp: Date.now() });
     });
 
     socket.on('disconnect', () => {
