@@ -1,8 +1,0 @@
-__tests__/
-test-simulator.js
-.git/
-.gitignore
-README.md
-.specstory/
-icon.png
-instructions.md
