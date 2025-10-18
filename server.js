@@ -13,6 +13,26 @@ const io = socketIo(server);
 
 const PORT = process.env.PORT || 3000;
 
+// Debug: Log directory contents
+console.log('Current working directory:', process.cwd());
+console.log('__dirname:', __dirname);
+try {
+    console.log('Files in current directory:', fs.readdirSync('.'));
+    console.log('Files in __dirname:', fs.readdirSync(__dirname));
+    if (fs.existsSync('public')) {
+        console.log('Files in public directory:', fs.readdirSync('public'));
+    } else {
+        console.log('Public directory does not exist!');
+    }
+    if (fs.existsSync(path.join(__dirname, 'public'))) {
+        console.log('Files in __dirname/public:', fs.readdirSync(path.join(__dirname, 'public')));
+    } else {
+        console.log('__dirname/public does not exist!');
+    }
+} catch (error) {
+    console.error('Error reading directories:', error.message);
+}
+
 // Game state storage
 const gameSessions = new Map();
 const wordList = new Set();
