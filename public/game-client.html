@@ -173,18 +173,11 @@
                 console.log('Connection error:', error);
                 showConnectionError();
             });
-                
-                // Stop heartbeat
-                if (heartbeatInterval) {
-                    clearInterval(heartbeatInterval);
-                }
+
             socket.on('joinedSession', (data) => {
                 playerNickname = data.nickname;
                 document.getElementById('player-nickname').textContent = playerNickname;
                 showLobbyPhase();
-                
-                // Activate mobile optimizations when successfully joined
-                activateMobileOptimizations();
             });
 
             socket.on('playersUpdated', (data) => {
@@ -250,11 +243,6 @@
 
             socket.on('error', (message) => {
                 showJoinError(message);
-            });
-
-            socket.on('disconnect', () => {
-                console.log('Disconnected from server');
-                showDisconnected();
             });
         }
 
