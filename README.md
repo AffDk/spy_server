@@ -44,9 +44,591 @@ The server will start on `http://localhost:3000`
 6. **Begin discussion** when the timer starts
 7. **Reveal spies** when time expires
 
-## 📋 Features
+## � Code Tutorial & Architecture Guide
 
-### 🎯 Core Gameplay
+### 🎓 For Developers New to JavaScript
+
+This section provides a comprehensive guide to understanding the codebase structure, key concepts, and deployment mechanics.
+
+#### 📁 Project Structure Overview
+
+```mermaid
+graph TD
+    A[spy_server/] --> B[server.js - Main Backend]
+    A --> C[package.json - Dependencies]
+    A --> D[package-lock.json - Lock File]
+    A --> E[Dockerfile - Container Config]
+    A --> F[word_list.csv - Game Data]
+    A --> G[public/ - Frontend Assets]
+    
+    G --> H[index.html - Host Setup]
+    G --> I[game-host.html - Host Panel]
+    G --> J[game-client.html - Player Interface]
+    G --> K[styles.css - Styling]
+    G --> L[script.js - Shared Utils]
+    
+    A --> M[__tests__/ - Unit Tests]
+    A --> N[test-simulator.js - Integration Tests]
+    
+    style B fill:#e1f5fe
+    style C fill:#f3e5f5
+    style E fill:#e8f5e8
+    style G fill:#fff3e0
+```
+
+#### 🏗️ Application Architecture
+
+```mermaid
+sequenceDiagram
+    participant H as Host Browser
+    participant S as Express Server
+    participant P as Player Browser
+    participant W as WebSocket Layer
+    
+    H->>S: POST /create (duration)
+    S->>S: Generate Session ID
+    S-->>H: Redirect to /host/{sessionId}
+    
+    H->>W: WebSocket Connect
+    W->>S: Host joins session
+    
+    P->>S: GET /game/{sessionId}
+    P->>W: WebSocket Connect
+    P->>W: joinSession(nickname)
+    W->>S: Add player to session
+    S->>W: Broadcast playersUpdated
+    W-->>H: Update player list
+    W-->>P: Confirm joined
+    
+    H->>W: startGame()
+    S->>S: Assign roles & select word
+    W-->>P: roleAssigned(role, word?)
+    W-->>H: gameStarted()
+```
+
+#### 🔧 Key Files Explained
+
+##### 📦 `package.json` - Project Configuration
+```javascript
+{
+  "name": "spy-word-game",           // Project identifier
+  "version": "1.0.0",               // Semantic versioning
+  "main": "server.js",              // Entry point for Node.js
+  "scripts": {
+    "start": "node server.js",      // Production command
+    "dev": "nodemon server.js",     // Development with auto-reload
+    "test": "jest"                  // Run unit tests
+  },
+  "dependencies": {
+    "express": "^4.18.2",          // Web server framework
+    "socket.io": "^4.7.2",         // Real-time WebSocket communication
+    "csv-parser": "^3.0.0",        // Parse word list CSV
+    "qrcode": "^1.5.3"             // Generate QR codes
+  },
+  "engines": {
+    "node": ">=16.0.0"              // Minimum Node.js version
+  }
+}
+```
+
+**Key Concepts:**
+- **Dependencies**: External libraries your code needs
+- **Scripts**: Commands you can run with `npm run <script-name>`
+- **Engines**: Specifies minimum Node.js version for deployment
+- **Main**: Entry file that starts your application
+
+##### 🔒 `package-lock.json` - Dependency Lock File
+```json
+{
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "dependencies": {
+        "express": "4.18.2",        // Exact version installed
+        "socket.io": "4.7.2"       // Prevents version conflicts
+      }
+    },
+    "node_modules/express": {
+      "version": "4.18.2",         // Specific version locked
+      "resolved": "https://registry.npmjs.org/express/-/express-4.18.2.tgz",
+      "integrity": "sha512-5/PsL6iGPdfQ/lKM1UuielYgv3BUoJfz1aUwU9vHZ+J7gyvwdQXFEBIEIaxeGf0GIcreATNyBExtalisDbuMqQ=="
+    }
+  }
+}
+```
+
+**Why This Matters:**
+- **Reproducible Builds**: Ensures everyone gets exactly the same dependency versions
+- **Security**: Prevents malicious package updates from breaking your app
+- **Deployment**: Cloud platforms use this to install identical dependencies
+
+##### 🐳 `Dockerfile` - Container Configuration
+```dockerfile
+# Use official Node.js runtime as base image
+FROM node:18-alpine
+
+# Set working directory inside container
+WORKDIR /app
+
+# Copy package files first (for better Docker layer caching)
+COPY package*.json ./
+
+# Install dependencies inside container
+RUN npm ci --only=production
+
+# Copy application code
+COPY . .
+
+# Expose port 3000 to outside world
+EXPOSE 3000
+
+# Command to run when container starts
+CMD ["npm", "start"]
+```
+
+**Container Concept:**
+- **Image**: Blueprint containing your app + Node.js + dependencies
+- **Container**: Running instance of your image
+- **Layers**: Docker builds in layers for efficiency
+- **Isolation**: Container runs independently of host system
+
+##### 🎮 Core Application Files
+
+**`server.js` - Backend Heart**
+```javascript
+// Import required modules
+const express = require('express');     // Web framework
+const http = require('http');          // HTTP server
+const socketIo = require('socket.io'); // WebSocket library
+const path = require('path');          // File path utilities
+
+// Create Express application
+const app = express();
+const server = http.createServer(app);  // HTTP server instance
+const io = socketIo(server);           // WebSocket server
+
+// In-memory data structures
+const gameSessions = new Map();        // sessionId -> GameSession object
+const words = [];                      // Array of game words
+
+// GameSession class definition
+class GameSession {
+    constructor(hostSocketId, duration) {
+        this.id = generateSessionId();     // Unique 6-character ID
+        this.hostSocketId = hostSocketId;  // Host's WebSocket connection
+        this.players = new Map();          // nickname -> player data
+        this.gameState = 'lobby';          // 'lobby' | 'playing' | 'ended'
+        this.duration = duration * 60000;  // Convert minutes to milliseconds
+        this.word = null;                  // Secret word for current round
+        this.spies = new Set();            // Set of spy nicknames
+    }
+}
+```
+
+**Key JavaScript Concepts:**
+- **`require()`**: Import modules (similar to `import` in other languages)
+- **`const`/`let`**: Variable declarations (`const` = immutable, `let` = mutable)
+- **`Map()` vs `Set()`**: Map = key-value pairs, Set = unique values
+- **Classes**: ES6 class syntax similar to other OOP languages
+- **Arrow functions**: `() => {}` shorthand for anonymous functions
+
+**WebSocket Event Handling**
+```javascript
+// When a client connects to WebSocket
+io.on('connection', (socket) => {
+    console.log('New connection:', socket.id);
+    
+    // Listen for custom events from client
+    socket.on('joinSession', (data) => {
+        const { sessionId, nickname } = data;  // Destructuring assignment
+        
+        // Validation
+        if (!sessionId || !nickname) {
+            socket.emit('error', 'Missing required data');
+            return;
+        }
+        
+        // Business logic
+        const session = gameSessions.get(sessionId);
+        if (!session) {
+            socket.emit('error', 'Session not found');
+            return;
+        }
+        
+        // Add player to session
+        session.players.set(nickname, {
+            socketId: socket.id,
+            nickname: nickname,
+            role: null  // Will be assigned when game starts
+        });
+        
+        // Join WebSocket room for session-specific broadcasts
+        socket.join(sessionId);
+        
+        // Send confirmation to player
+        socket.emit('joinedSession', { nickname });
+        
+        // Notify all players in session about updated player list
+        io.to(sessionId).emit('playersUpdated', {
+            players: Array.from(session.players.keys()),
+            count: session.players.size
+        });
+    });
+});
+```
+
+**Frontend Structure (`game-client.html`)**
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <!-- Game phases as separate divs -->
+    <div id="join-phase">
+        <form id="joinForm">
+            <input type="text" id="nickname" placeholder="Your nickname">
+            <button type="submit">Join Game</button>
+        </form>
+    </div>
+    
+    <div id="lobby-phase" class="hidden">
+        <!-- Waiting room UI -->
+    </div>
+    
+    <div id="game-phase" class="hidden">
+        <!-- Active game UI -->
+    </div>
+    
+    <!-- Include Socket.io client library -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        let socket;
+        let sessionId;
+        let playerNickname;
+        
+        // Initialize WebSocket connection
+        function initializeSocket() {
+            socket = io({
+                transports: ['websocket', 'polling'],  // Connection methods
+                timeout: 20000,                        // 20 second timeout
+                reconnection: true,                    // Auto-reconnect
+                reconnectionAttempts: 5                // Try 5 times
+            });
+            
+            // Event listeners for server messages
+            socket.on('connect', () => {
+                console.log('Connected to server');
+                sessionId = window.location.pathname.split('/')[2];  // Extract from URL
+                hideConnectionError();
+            });
+            
+            socket.on('joinedSession', (data) => {
+                playerNickname = data.nickname;
+                showLobbyPhase();  // Switch UI phase
+            });
+            
+            socket.on('roleAssigned', (data) => {
+                if (data.role === 'spy') {
+                    showSpyRole();
+                } else {
+                    showCivilianRole(data.word);  // Civilians get the secret word
+                }
+            });
+        }
+        
+        // Form submission handler
+        document.getElementById('joinForm').addEventListener('submit', (e) => {
+            e.preventDefault();  // Prevent page reload
+            
+            const nickname = document.getElementById('nickname').value.trim();
+            
+            if (!nickname) {
+                showError('Please enter a nickname');
+                return;
+            }
+            
+            // Send join request to server
+            socket.emit('joinSession', { sessionId, nickname });
+        });
+        
+        // Initialize when page loads
+        initializeSocket();
+    </script>
+</body>
+</html>
+```
+
+#### 🚀 Docker Deep Dive
+
+##### What Docker Contains
+```mermaid
+graph LR
+    A[Docker Image] --> B[Alpine Linux OS]
+    A --> C[Node.js 18 Runtime]
+    A --> D[npm Package Manager]
+    A --> E[Your Application Code]
+    A --> F[Dependencies from package.json]
+    A --> G[Environment Variables]
+    
+    F --> F1[express]
+    F --> F2[socket.io]
+    F --> F3[csv-parser]
+    F --> F4[qrcode]
+    
+    style A fill:#e1f5fe
+    style B fill:#ffebee
+    style C fill:#e8f5e8
+```
+
+##### Docker Build Process
+```bash
+# 1. Docker reads Dockerfile line by line
+# 2. Each instruction creates a new layer
+
+FROM node:18-alpine        # Layer 1: Base OS + Node.js
+WORKDIR /app              # Layer 2: Set working directory
+COPY package*.json ./     # Layer 3: Copy package files
+RUN npm ci               # Layer 4: Install dependencies
+COPY . .                 # Layer 5: Copy application code
+EXPOSE 3000              # Layer 6: Document port usage
+CMD ["npm", "start"]     # Layer 7: Set startup command
+```
+
+##### Docker vs Direct Installation
+| Aspect | Direct Install | Docker Container |
+|--------|----------------|------------------|
+| **Dependencies** | Install Node.js on host | Node.js included in image |
+| **Isolation** | Shares host environment | Completely isolated |
+| **Portability** | "Works on my machine" | Works anywhere Docker runs |
+| **Deployment** | Manual setup on server | Single image deployment |
+| **Scaling** | Manual process management | Container orchestration |
+
+##### Railway Docker Deployment
+```yaml
+# Railway automatically detects and builds Dockerfile
+# Equivalent to running:
+docker build -t spy-game .
+docker run -p $PORT:3000 spy-game
+
+# Railway provides:
+# - Automatic port binding ($PORT environment variable)
+# - Health checks on your application
+# - Load balancing for multiple instances
+# - Automatic HTTPS certificates
+# - Environment variable injection
+```
+
+#### 🔍 Code Reading Guide
+
+##### Following Request Flow
+```mermaid
+flowchart TD
+    A[Browser Request] --> B{Route Match?}
+    B -->|GET /| C[Serve index.html]
+    B -->|GET /game/:id| D[Serve game-client.html]
+    B -->|POST /create| E[Create Game Session]
+    
+    C --> F[Host Setup Page]
+    D --> G[Player Game Interface]
+    E --> H[Generate Session ID]
+    
+    H --> I[Store in gameSessions Map]
+    I --> J[Redirect to Host Panel]
+    
+    F --> K[WebSocket Connection]
+    G --> L[WebSocket Connection]
+    
+    K --> M[Host Events Handler]
+    L --> N[Player Events Handler]
+    
+    M --> O[Game Management Logic]
+    N --> P[Game Participation Logic]
+```
+
+##### Key JavaScript Patterns to Understand
+
+**1. Event-Driven Architecture**
+```javascript
+// Server listens for events from clients
+socket.on('eventName', (data) => {
+    // Handle event
+    processEvent(data);
+    
+    // Emit response
+    socket.emit('responseEvent', result);
+});
+
+// Client listens for events from server
+socket.on('serverEvent', (data) => {
+    // Update UI based on server data
+    updateInterface(data);
+});
+```
+
+**2. Asynchronous Operations**
+```javascript
+// Timers and delays
+setTimeout(() => {
+    console.log('This runs after 5 seconds');
+}, 5000);
+
+// Intervals
+const timer = setInterval(() => {
+    console.log('This runs every second');
+}, 1000);
+
+// Stop interval
+clearInterval(timer);
+```
+
+**3. DOM Manipulation**
+```javascript
+// Get elements
+const element = document.getElementById('myId');
+const elements = document.querySelectorAll('.myClass');
+
+// Modify content
+element.textContent = 'New text';
+element.innerHTML = '<b>Bold text</b>';
+
+// Show/hide elements
+element.classList.add('hidden');
+element.classList.remove('hidden');
+element.classList.toggle('active');
+```
+
+**4. Data Structures**
+```javascript
+// Arrays
+const players = ['Alice', 'Bob', 'Charlie'];
+players.push('David');          // Add to end
+players.includes('Alice');      // Check if exists
+
+// Objects (like dictionaries/maps)
+const player = {
+    name: 'Alice',
+    role: 'spy',
+    score: 100
+};
+
+// Maps (better for dynamic keys)
+const sessions = new Map();
+sessions.set('ABC123', gameSession);
+sessions.get('ABC123');
+sessions.has('ABC123');
+sessions.delete('ABC123');
+
+// Sets (unique values only)
+const spies = new Set();
+spies.add('Alice');
+spies.add('Bob');
+spies.size;  // 2
+```
+
+#### 🛠️ Development Workflow
+
+##### Local Development Setup
+```bash
+# 1. Clone repository
+git clone <repository-url>
+cd spy_server
+
+# 2. Install dependencies (reads package.json)
+npm install
+
+# 3. Development mode (auto-restarts on file changes)
+npm run dev
+
+# 4. Production mode
+npm start
+
+# 5. Run tests
+npm test
+```
+
+##### File Watching and Auto-Reload
+```javascript
+// package.json includes nodemon for development
+{
+  "scripts": {
+    "dev": "nodemon server.js",      // Watches files, restarts on changes
+    "start": "node server.js"        // Production: no file watching
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"            // Development-only dependency
+  }
+}
+```
+
+##### Environment Variables
+```javascript
+// server.js reads environment variables
+const PORT = process.env.PORT || 3000;        // Railway sets PORT automatically
+const HOST = process.env.HOST || 'localhost'; // Override for different hosts
+
+// In production (Railway/Docker):
+// PORT=45678 (set by platform)
+// NODE_ENV=production (optimizations)
+
+// In development:
+// PORT=3000 (your local setting)
+// NODE_ENV=development (debug info)
+```
+
+#### 📊 Performance & Scaling Considerations
+
+##### Memory Usage
+```javascript
+// In-memory storage (current approach)
+const gameSessions = new Map();  // Stores all active games in RAM
+
+// Pros:
+// - Fast access (no database queries)
+// - Simple implementation
+// - No external dependencies
+
+// Cons:
+// - Data lost on server restart
+// - Limited by available RAM
+// - Can't scale horizontally easily
+
+// For larger scale, consider:
+// - Redis for session storage
+// - Database for persistent data
+// - Horizontal scaling with load balancers
+```
+
+##### Connection Management
+```javascript
+// Socket.io handles connection lifecycle
+io.on('connection', (socket) => {
+    // Client connected
+    
+    socket.on('disconnect', (reason) => {
+        // Client disconnected - cleanup required
+        removePlayerFromAllSessions(socket.id);
+    });
+});
+```
+
+#### 🎯 Next Steps for Learning
+
+1. **Start Small**: Modify existing functions before adding new features
+2. **Use Browser DevTools**: 
+   - Console tab for JavaScript errors
+   - Network tab to see WebSocket messages
+   - Elements tab to inspect DOM changes
+3. **Add Logging**: Use `console.log()` liberally to understand flow
+4. **Read Documentation**:
+   - [Express.js Guide](https://expressjs.com/en/guide/routing.html)
+   - [Socket.io Documentation](https://socket.io/docs/)
+   - [MDN JavaScript Reference](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
+
+## 📋 Features
 - **Real-time multiplayer** via WebSocket connections
 - **Secure randomization** using Node.js crypto module
 - **Scalable architecture** supports up to 100 players per session
@@ -76,6 +658,312 @@ The server will start on `http://localhost:3000`
 - **Role display** shows spy status and word (for civilians)
 - **Real-time updates** for all game state changes
 - **Graceful disconnection** handling
+
+## ⚙️ Configuration Files Deep Dive
+
+### 📋 Essential Files Breakdown
+
+#### `package.json` vs `package-lock.json`
+```mermaid
+graph LR
+    A[package.json] --> B[Human-Readable]
+    A --> C[Version Ranges]
+    A --> D[Scripts & Metadata]
+    
+    E[package-lock.json] --> F[Machine-Generated]
+    E --> G[Exact Versions]
+    E --> H[Dependency Tree]
+    
+    A --> I[npm install]
+    I --> E
+    
+    style A fill:#e3f2fd
+    style E fill:#f3e5f5
+```
+
+**`package.json` - The Blueprint**
+```json
+{
+  "dependencies": {
+    "express": "^4.18.2"    // ^ means "4.18.2 or newer minor version"
+  },
+  "scripts": {
+    "start": "node server.js",     // What Railway runs in production
+    "dev": "nodemon server.js",    // Development with auto-restart
+    "test": "jest __tests__/"      // Run unit tests
+  }
+}
+```
+
+**`package-lock.json` - The Exact Recipe**
+```json
+{
+  "dependencies": {
+    "express": {
+      "version": "4.18.2",              // Exact version installed
+      "resolved": "https://...",        // Where it was downloaded from
+      "integrity": "sha512-...",        // Security checksum
+      "requires": {                     // What express needs
+        "accepts": "~1.3.8",
+        "array-flatten": "1.1.1"
+      }
+    }
+  }
+}
+```
+
+#### Docker Configuration Files
+
+**`Dockerfile` - Container Recipe**
+```dockerfile
+# Stage 1: Base Environment
+FROM node:18-alpine AS base
+# Alpine = Minimal Linux (5MB vs 1GB+ full Linux)
+# node:18 = Specific Node.js version for consistency
+
+# Stage 2: Working Environment Setup
+WORKDIR /app
+# Everything happens in /app directory inside container
+
+# Stage 3: Dependency Installation (Cached Layer)
+COPY package*.json ./
+# Copy package files FIRST for Docker layer caching
+# If only code changes, this layer stays cached
+RUN npm ci --only=production --silent
+# npm ci = faster, deterministic installs for production
+# --only=production = skip devDependencies (testing tools, etc.)
+
+# Stage 4: Application Code
+COPY . .
+# Copy all remaining files
+
+# Stage 5: Runtime Configuration
+EXPOSE 3000
+# Document which port the app uses (for Railway/cloud platforms)
+CMD ["npm", "start"]
+# Command to run when container starts
+```
+
+**`.dockerignore` - What NOT to Copy**
+```bash
+node_modules/          # Don't copy, will be installed fresh
+.git/                  # Version control not needed in container
+__tests__/             # Tests not needed in production
+*.log                  # Log files
+.env.local             # Local environment files
+README.md              # Documentation
+```
+
+#### Environment-Specific Files
+
+**Development Environment**
+```bash
+# .env.development (if you create one)
+PORT=3000
+NODE_ENV=development
+DEBUG=socket.io*       # Enable detailed Socket.io logging
+```
+
+**Production Environment (Railway automatically sets)**
+```bash
+PORT=12345             # Railway assigns random port
+NODE_ENV=production    # Enables optimizations
+RAILWAY_PROJECT_ID=... # Platform-specific variables
+```
+
+### 🐳 Docker Layer Optimization
+
+```mermaid
+graph TD
+    A[Docker Build] --> B[Layer 1: Alpine Linux + Node.js]
+    B --> C[Layer 2: Set /app directory]
+    C --> D[Layer 3: Copy package.json files]
+    D --> E[Layer 4: npm ci install]
+    E --> F[Layer 5: Copy application code]
+    F --> G[Layer 6: Set startup command]
+    
+    H[Code Change] --> I{Which files changed?}
+    I -->|Only .js files| J[Reuse Layers 1-4, Rebuild 5-6]
+    I -->|package.json| K[Rebuild from Layer 4]
+    I -->|Dockerfile| L[Rebuild everything]
+    
+    style E fill:#c8e6c9
+    style F fill:#ffcdd2
+```
+
+**Why This Matters:**
+- **Faster Builds**: Unchanged layers are reused
+- **Efficient Storage**: Common layers shared between images
+- **Quick Deployments**: Only changed layers uploaded to cloud
+
+### 📦 Dependency Management Strategy
+
+#### Production Dependencies (Required at Runtime)
+```json
+{
+  "dependencies": {
+    "express": "^4.18.2",        // Web server - CRITICAL
+    "socket.io": "^4.7.2",       // Real-time communication - CRITICAL
+    "csv-parser": "^3.0.0",      // Parse word list - CRITICAL
+    "qrcode": "^1.5.3"           // Generate join codes - NICE TO HAVE
+  }
+}
+```
+
+#### Development Dependencies (Not Deployed)
+```json
+{
+  "devDependencies": {
+    "nodemon": "^2.0.22",        // Auto-restart during development
+    "jest": "^29.0.0"            // Testing framework
+  }
+}
+```
+
+#### Security & Version Management
+```bash
+# Check for vulnerable dependencies
+npm audit
+
+# Fix automatically fixable issues
+npm audit fix
+
+# Update dependencies to latest compatible versions
+npm update
+
+# Check what's outdated
+npm outdated
+```
+
+### 🚀 Railway Deployment Mechanics
+
+#### How Railway Builds Your App
+```mermaid
+sequenceDiagram
+    participant You as Your Computer
+    participant Git as GitHub Repo
+    participant Rail as Railway Platform
+    participant Dock as Docker Builder
+    participant Run as Running Container
+    
+    You->>Git: git push origin main
+    Git->>Rail: Webhook: New commits available
+    Rail->>Git: Clone repository
+    Rail->>Dock: Build Docker image
+    
+    Note over Dock: 1. FROM node:18-alpine
+    Note over Dock: 2. COPY package*.json
+    Note over Dock: 3. RUN npm ci --production
+    Note over Dock: 4. COPY application code
+    Note over Dock: 5. EXPOSE 3000
+    
+    Dock->>Rail: Image built successfully
+    Rail->>Run: Deploy new container
+    Run->>Rail: Health check: GET /
+    Rail-->>You: Deployment successful + URL
+```
+
+#### Railway Environment Injection
+```javascript
+// Your code reads Railway's environment variables
+const port = process.env.PORT || 3000;           // Railway sets this
+const host = process.env.RAILWAY_PUBLIC_DOMAIN;  // Your app's URL
+
+server.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+    if (host) {
+        console.log(`Public URL: https://${host}`);
+    }
+});
+```
+
+#### Railway Configuration Files (Auto-Generated)
+
+**`railway.toml` (Optional - for advanced config)**
+```toml
+[build]
+builder = "dockerfile"           # Use your Dockerfile
+buildCommand = "echo 'Building with Docker'"
+
+[deploy]
+healthcheckPath = "/"           # Railway pings this URL to verify app is running
+healthcheckTimeout = 300        # Wait 5 minutes for app to start
+restartPolicyType = "always"    # Restart if crashes
+
+[environments.production]
+variables = { NODE_ENV = "production" }
+```
+
+### 🔧 Common Configuration Issues & Solutions
+
+#### Problem: "Module not found" in Production
+```bash
+# Wrong: Installing as devDependency
+npm install --save-dev express
+
+# Right: Installing as production dependency
+npm install --save express
+```
+
+#### Problem: Different Behavior Local vs Production
+```javascript
+// Wrong: Hardcoded localhost
+const socket = io('http://localhost:3000');
+
+// Right: Dynamic host detection
+const socket = io(); // Automatically uses current domain
+```
+
+#### Problem: Environment Variables Not Working
+```javascript
+// Wrong: Expecting .env file in production
+require('dotenv').config();
+
+// Right: Cloud platforms inject environment variables directly
+const port = process.env.PORT || 3000; // Fallback for local dev
+```
+
+#### Problem: Port Conflicts in Docker
+```dockerfile
+# Wrong: Hardcoded port
+EXPOSE 3000
+CMD ["node", "server.js", "--port=3000"]
+
+# Right: Use environment variable
+EXPOSE $PORT
+# Let your app code handle process.env.PORT
+```
+
+### 📊 Performance Monitoring
+
+#### What to Monitor in Production
+```javascript
+// Add basic metrics to your app
+const startTime = Date.now();
+let activeConnections = 0;
+let totalConnections = 0;
+
+io.on('connection', (socket) => {
+    activeConnections++;
+    totalConnections++;
+    
+    socket.on('disconnect', () => {
+        activeConnections--;
+    });
+});
+
+// Health check endpoint for Railway
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'healthy',
+        uptime: Date.now() - startTime,
+        activeConnections,
+        totalConnections,
+        memory: process.memoryUsage(),
+        version: require('./package.json').version
+    });
+});
+```
 
 ## 🏗 Technical Architecture
 
