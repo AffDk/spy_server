@@ -72,9 +72,7 @@ class GameSession {
         this.currentWord = null;
         this.previousWord = null;
         this.phase = 'lobby'; // lobby, game, ended
-        this.lobbyTimer = null;
         this.gameTimer = null;
-        this.lobbyDuration = 90; // seconds
         this.gameStartTime = null;
         this.registrationOpen = true;
     }
@@ -353,14 +351,6 @@ io.on('connection', (socket) => {
         socket.join(sessionId);
         socket.emit('sessionCreated', { sessionId });
 
-        // Start lobby timer
-        session.lobbyTimer = setTimeout(() => {
-            session.registrationOpen = false;
-            io.to(sessionId).emit('lobbyEnded', {
-                playerCount: session.players.size
-            });
-        }, session.lobbyDuration * 1000);
-
         console.log(`Session ${sessionId} created with ${duration} minutes duration`);
     });
 
@@ -432,41 +422,7 @@ io.on('connection', (socket) => {
         console.log(`Host rejoined session ${sessionId} with new socket ${socket.id}`);
     });
 
-    socket.on('extendLobby', (data) => {
-        const { sessionId } = data;
-        const session = gameSessions.get(sessionId);
-        
-        console.log(`ExtendLobby request for session ${sessionId} from socket ${socket.id}`);
-        console.log(`Session exists: ${!!session}, Host socket: ${session?.host}`);
-        
-        if (!session || session.host !== socket.id) {
-            console.log(`Unauthorized extend lobby attempt. Session host: ${session?.host}, Request from: ${socket.id}`);
-            socket.emit('error', 'Unauthorized or session not found');
-            return;
-        }
 
-        // Clear existing timer
-        if (session.lobbyTimer) {
-            clearTimeout(session.lobbyTimer);
-        }
-
-        // Extend timer by 30 seconds
-        session.registrationOpen = true;
-        session.lobbyTimer = setTimeout(() => {
-            session.registrationOpen = false;
-            io.to(sessionId).emit('lobbyEnded', {
-                playerCount: session.players.size
-            });
-        }, 30000);
-
-        // Emit lobby extended with reset timer
-        io.to(sessionId).emit('lobbyExtended', { 
-            additionalTime: 30,
-            timeLeft: 30,
-            resetTimer: true 
-        });
-        console.log(`Lobby extended for session ${sessionId}`);
-    });
 
     socket.on('startGame', (data) => {
         const { sessionId } = data;
@@ -482,10 +438,8 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // Clear lobby timer
-        if (session.lobbyTimer) {
-            clearTimeout(session.lobbyTimer);
-        }
+        // Close registration
+        session.registrationOpen = false;
 
         // Assign roles
         session.selectSpies();
@@ -563,6 +517,7 @@ io.on('connection', (socket) => {
         session.selectSpies();
         session.selectRandomWord();
         session.gameStartTime = null;
+        session.registrationOpen = false; // Keep registration closed for new rounds
 
         // Send new roles to players
         console.log(`Sending roles to ${session.players.size} players in session ${sessionId}`);
@@ -607,8 +562,7 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // Clear timers
-        if (session.lobbyTimer) clearTimeout(session.lobbyTimer);
+        // Clear game timer
         if (session.gameTimer) clearTimeout(session.gameTimer);
 
         // Notify all players
@@ -636,8 +590,7 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // Clear timers
-        if (session.lobbyTimer) clearTimeout(session.lobbyTimer);
+        // Clear game timer
         if (session.gameTimer) clearTimeout(session.gameTimer);
 
         // Notify all players
@@ -705,7 +658,6 @@ io.on('connection', (socket) => {
                 
                 // If host disconnected, abort the session
                 if (session.host === socket.id) {
-                    if (session.lobbyTimer) clearTimeout(session.lobbyTimer);
                     if (session.gameTimer) clearTimeout(session.gameTimer);
                     
                     io.to(sessionId).emit('gameAborted');

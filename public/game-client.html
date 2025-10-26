@@ -47,8 +47,8 @@
                     <div class="loading">Loading players...</div>
                 </div>
 
-                <div class="lobby-timer">
-                    <span id="lobby-status">Lobby open</span>
+                <div class="info-message" style="background: #27ae60;">
+                    <span id="lobby-status">Waiting for host to start the game...</span>
                 </div>
 
                 <button id="leave-game-btn" class="btn btn-secondary btn-full">
@@ -184,15 +184,7 @@
                 updateLobbyPlayerList(data.players, data.count);
             });
 
-            socket.on('lobbyEnded', (data) => {
-                document.getElementById('lobby-status').textContent = 
-                    `Lobby closed (${data.playerCount} players)`;
-            });
 
-            socket.on('lobbyExtended', (data) => {
-                showSuccess(`Lobby extended by ${data.additionalTime || 30} seconds`);
-                document.getElementById('lobby-status').textContent = 'Lobby open';
-            });
 
             socket.on('roleAssigned', (data) => {
                 console.log('Role assigned:', data);

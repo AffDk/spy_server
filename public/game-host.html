@@ -33,12 +33,9 @@
                     <img id="qr-image" alt="QR Code" style="display: none;">
                 </div>
 
-                <div class="lobby-timer">
-                    Lobby closes in: <span id="lobby-countdown">90</span> seconds
-                </div>
-
                 <div class="info-message">
-                    <strong>Connected Players: <span id="player-count">0</span></strong>
+                    <strong>Connected Players: <span id="player-count">0</span></strong><br>
+                    <small>Waiting for players to join...</small>
                 </div>
 
                 <div class="player-list" id="player-list">
@@ -46,31 +43,12 @@
                 </div>
 
                 <div class="btn-group" id="lobby-controls">
-                    <button id="extend-lobby-btn" class="btn btn-warning">
-                        Extend Lobby (+30s)
+                    <button id="start-game-btn" class="btn btn-success btn-pulse" disabled>
+                        Start Game (Need 4+ players)
                     </button>
                     <button id="abort-game-btn" class="btn btn-danger">
                         Abort Game
                     </button>
-                </div>
-
-                <!-- Lobby End Controls -->
-                <div id="lobby-end-controls" class="hidden">
-                    <div class="warning-message" id="lobby-end-message">
-                        Lobby time expired!
-                    </div>
-                    
-                    <div class="btn-group">
-                        <button id="start-game-btn" class="btn btn-success btn-pulse" disabled>
-                            Start Game
-                        </button>
-                        <button id="extend-lobby-btn-2" class="btn btn-warning">
-                            Extend Lobby (+30s)
-                        </button>
-                        <button id="abort-game-btn-2" class="btn btn-danger">
-                            Abort Game
-                        </button>
-                    </div>
                 </div>
             </div>
 
@@ -140,7 +118,6 @@
     <script>
         let socket;
         let sessionId;
-        let lobbyTimer;
         let gameTimer;
         let gameStartTime;
         let gameDuration; // in seconds
@@ -204,21 +181,7 @@
                 updatePlayerList(data.players, data.count);
             });
 
-            socket.on('lobbyEnded', (data) => {
-                clearInterval(lobbyTimer);
-                showLobbyEndControls(data.playerCount);
-            });
 
-            socket.on('lobbyExtended', (data) => {
-                showSuccess(`Lobby extended by ${data.additionalTime} seconds`);
-                // Clear existing timer before starting new one
-                if (lobbyTimer) {
-                    clearInterval(lobbyTimer);
-                }
-                startLobbyTimer(30); // Always reset to 30 seconds when extending
-                document.getElementById('lobby-end-controls').classList.add('hidden');
-                document.getElementById('lobby-controls').classList.remove('hidden');
-            });
 
             socket.on('gameStarted', (data) => {
                 gameDuration = data.duration;
@@ -291,9 +254,6 @@
             document.getElementById('lobby-phase').classList.remove('hidden');
             document.getElementById('game-status').innerHTML = 
                 '<span class="status-lobby">Lobby Phase - Waiting for Players</span>';
-            
-            // Start lobby countdown
-            startLobbyTimer(90);
         }
 
         function showPrepPhase() {
@@ -329,23 +289,7 @@
             document.getElementById('end-phase').classList.add('hidden');
         }
 
-        function showLobbyEndControls(playerCount) {
-            document.getElementById('lobby-controls').classList.add('hidden');
-            document.getElementById('lobby-end-controls').classList.remove('hidden');
-            
-            const startBtn = document.getElementById('start-game-btn');
-            if (playerCount >= 4) {
-                startBtn.disabled = false;
-                startBtn.textContent = `Start Game (${playerCount} players)`;
-                document.getElementById('lobby-end-message').textContent = 'Ready to start!';
-                document.getElementById('lobby-end-message').className = 'success-message';
-            } else {
-                startBtn.disabled = true;
-                startBtn.textContent = `Need ${4 - playerCount} more players`;
-                document.getElementById('lobby-end-message').textContent = 'Minimum 4 players required';
-                document.getElementById('lobby-end-message').className = 'error-message';
-            }
-        }
+
 
         function updatePlayerList(players, count) {
             document.getElementById('player-count').textContent = count;
@@ -353,6 +297,18 @@
             
             const spyCount = Math.max(Math.floor(count / 3), 1);
             document.getElementById('spy-count').textContent = spyCount;
+            
+            // Update start game button based on player count
+            const startBtn = document.getElementById('start-game-btn');
+            if (count >= 4) {
+                startBtn.disabled = false;
+                startBtn.textContent = `Start Game (${count} players)`;
+                startBtn.classList.add('btn-pulse');
+            } else {
+                startBtn.disabled = true;
+                startBtn.textContent = `Start Game (Need ${4 - count} more players)`;
+                startBtn.classList.remove('btn-pulse');
+            }
             
             const playerListDiv = document.getElementById('player-list');
             if (players.length === 0) {
@@ -364,28 +320,7 @@
             }
         }
 
-        function startLobbyTimer(seconds) {
-            // Clear any existing timer first
-            if (lobbyTimer) {
-                clearInterval(lobbyTimer);
-                lobbyTimer = null;
-            }
-            
-            let timeLeft = seconds;
-            document.getElementById('lobby-countdown').textContent = timeLeft;
-            
-            lobbyTimer = setInterval(() => {
-                timeLeft--;
-                document.getElementById('lobby-countdown').textContent = timeLeft;
-                
-                if (timeLeft <= 0) {
-                    clearInterval(lobbyTimer);
-                    lobbyTimer = null;
-                    // Stop the timer at 0, don't go negative
-                    document.getElementById('lobby-countdown').textContent = 0;
-                }
-            }, 1000);
-        }
+
 
         function startGameTimer() {
             const updateTimer = () => {
@@ -436,21 +371,7 @@
         }
 
         // Event listeners
-        document.getElementById('extend-lobby-btn').addEventListener('click', () => {
-            socket.emit('extendLobby', { sessionId });
-        });
-
-        document.getElementById('extend-lobby-btn-2').addEventListener('click', () => {
-            socket.emit('extendLobby', { sessionId });
-        });
-
         document.getElementById('abort-game-btn').addEventListener('click', () => {
-            if (confirm('Are you sure you want to abort the game?')) {
-                socket.emit('abortGame', { sessionId });
-            }
-        });
-
-        document.getElementById('abort-game-btn-2').addEventListener('click', () => {
             if (confirm('Are you sure you want to abort the game?')) {
                 socket.emit('abortGame', { sessionId });
             }
