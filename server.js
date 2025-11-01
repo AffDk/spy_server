@@ -68,7 +68,9 @@ class GameSession {
         this.duration = duration; // in minutes
         this.host = host;
         this.players = new Map(); // socketId -> {nickname, socketId, isHost}
-        this.spies = new Set();
+        this.allPlayerNicknames = new Set(); // All nicknames that have joined (persistent)
+        this.spies = new Set(); // socketId set for spies
+        this.spyNicknames = new Set(); // Persistent spy nicknames (survives disconnections)
         this.currentWord = null;
         this.previousWord = null;
         this.phase = 'lobby'; // lobby, game, ended
@@ -82,21 +84,30 @@ class GameSession {
             throw new Error('Registration is closed');
         }
 
-        // Check for duplicate nicknames
+        // Check for duplicate nicknames only among active players
+        // This allows reconnections with the same nickname if the player is not currently active
+        const normalizedNickname = nickname.toLowerCase().trim();
+        
+        // Check active players only - allow reconnection with same nickname if not currently active
         for (const player of this.players.values()) {
-            if (player.nickname.toLowerCase() === nickname.toLowerCase()) {
+            if (player.nickname.toLowerCase().trim() === normalizedNickname) {
                 throw new Error('Nickname already taken');
             }
         }
 
+        // Add to both active players and persistent nickname list
         this.players.set(socketId, {
             socketId,
             nickname,
             isHost: socketId === this.host
         });
+        
+        this.allPlayerNicknames.add(nickname);
     }
 
     removePlayer(socketId) {
+        // Don't remove from allPlayerNicknames - keep it for persistent tracking
+        // Only remove from active players
         this.players.delete(socketId);
         this.spies.delete(socketId);
     }
@@ -114,8 +125,17 @@ class GameSession {
         const shuffledPlayers = secureshuffle(playerIds);
         
         this.spies.clear();
+        this.spyNicknames.clear(); // Reset spy nicknames for new selection
+        
         for (let i = 0; i < spyCount; i++) {
-            this.spies.add(shuffledPlayers[i]);
+            const spySocketId = shuffledPlayers[i];
+            this.spies.add(spySocketId);
+            
+            // Store the spy's nickname persistently
+            const spyPlayer = this.players.get(spySocketId);
+            if (spyPlayer) {
+                this.spyNicknames.add(spyPlayer.nickname);
+            }
         }
     }
 
@@ -137,9 +157,8 @@ class GameSession {
     }
 
     getSpyNicknames() {
-        return Array.from(this.spies)
-            .map(socketId => this.players.get(socketId)?.nickname)
-            .filter(nickname => nickname);
+        // Return persistent spy nicknames instead of relying on active connections
+        return Array.from(this.spyNicknames);
     }
 }
 
